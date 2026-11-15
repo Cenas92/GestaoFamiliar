@@ -10,8 +10,10 @@ import {
   Plus,
   Search,
   ShoppingCart,
+  SlidersHorizontal,
   Snowflake,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   CATALOG_CATEGORY_LABELS,
@@ -69,6 +71,20 @@ interface StockViewProps {
 }
 
 type StatusFilter = 'all' | 'expiring' | 'low' | 'leftovers';
+
+const STATUS_FILTER_OPTIONS: [StatusFilter, string][] = [
+  ['all', 'Todos'],
+  ['expiring', 'A expirar / Expirados'],
+  ['low', 'Stock baixo'],
+  ['leftovers', 'Sobras / Congelados'],
+];
+
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  all: 'Todos',
+  expiring: 'A expirar / Expirados',
+  low: 'Stock baixo',
+  leftovers: 'Sobras / Congelados',
+};
 
 interface LocationGroup {
   id: string;
@@ -414,6 +430,9 @@ export function StockView({
   const [selectedCategory, setSelectedCategory] = useState<CatalogCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 640 : true,
+  );
 
   const [prefs, setPrefs] = useState<StockViewPreferences>(() => loadStockViewPreferences());
   const [collapsedLocationIds, setCollapsedLocationIds] = useState<Set<string>>(() => new Set());
@@ -464,6 +483,17 @@ export function StockView({
     }
     return counts;
   }, [stockLots]);
+
+  const visibleLocations = useMemo(
+    () =>
+      locations.filter(
+        (loc) => (locationCounts.get(loc.id) ?? 0) > 0 || selectedLocationId === loc.id,
+      ),
+    [locations, locationCounts, selectedLocationId],
+  );
+
+  const activeFiltersCount =
+    (selectedCategory !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0);
 
   const filteredLots = useMemo(() => {
     const q = normalizeText(search);
@@ -723,21 +753,25 @@ export function StockView({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Stock da Casa</h1>
-          <p className="text-xs text-slate-500">
-            {stockLots.length} registos ativos · {lowStockSummaries.length} abaixo do mínimo
+    <div className="space-y-2.5">
+      {/* Compact single-row header */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold leading-tight text-slate-900 sm:text-xl">
+            Stock da Casa
+          </h1>
+          <p className="truncate text-[11px] text-slate-500">
+            {stockLots.length} {stockLots.length === 1 ? 'registo' : 'registos'} ·{' '}
+            {lowStockSummaries.length} abaixo do mín.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={() => setCatalogModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
           >
-            <BookOpen className="h-4 w-4 text-teal-700" />
+            <BookOpen className="h-3.5 w-3.5 text-teal-700" />
             Catálogo
           </button>
           <button
@@ -746,26 +780,26 @@ export function StockView({
               setEditingLot(null);
               setLotModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-800"
+            className="inline-flex items-center gap-1 rounded-xl bg-teal-700 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-teal-800 sm:px-3"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             Adicionar
           </button>
         </div>
       </div>
 
       {feedbackToast && (
-        <div className="rounded-xl bg-teal-900 px-3.5 py-2 text-xs font-medium text-white shadow">
+        <div className="rounded-xl bg-teal-900 px-3 py-1.5 text-xs font-medium text-white shadow">
           {feedbackToast}
         </div>
       )}
 
-      {/* Location pills */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* Location pills (hides empty 0-count locations and scrollbar) */}
+      <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
         <button
           type="button"
           onClick={() => setSelectedLocationId('all')}
-          className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
             selectedLocationId === 'all'
               ? 'border-slate-900 bg-slate-900 text-white'
               : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -773,7 +807,7 @@ export function StockView({
         >
           Todos ({stockLots.length})
         </button>
-        {locations.map((loc) => {
+        {visibleLocations.map((loc) => {
           const colors = LOCATION_COLOR_CLASSES[loc.colorToken];
           const count = locationCounts.get(loc.id) ?? 0;
           const active = selectedLocationId === loc.id;
@@ -782,9 +816,9 @@ export function StockView({
               key={loc.id}
               type="button"
               onClick={() => setSelectedLocationId(loc.id)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
                 active
-                  ? `${colors.badge} ring-2 ring-offset-1 ring-slate-300`
+                  ? `${colors.badge} ring-1 ring-slate-300`
                   : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
               }`}
             >
@@ -795,62 +829,117 @@ export function StockView({
         })}
       </div>
 
-      {/* Search + Category */}
-      <div className="grid gap-2 sm:grid-cols-3">
-        <div className="relative sm:col-span-2">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+      {/* Search + Collapsible Filters toggle */}
+      <div className="flex items-center gap-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Pesquisar produto, marca ou nota..."
-            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-teal-600"
+            placeholder="Pesquisar produto ou nota..."
+            className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs sm:text-sm outline-none focus:border-teal-600"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Limpar pesquisa"
+              className="absolute right-2 top-1.5 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value as CatalogCategory | 'all')}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-600"
-          aria-label="Filtrar por categoria"
+
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition ${
+            filtersOpen || activeFiltersCount > 0
+              ? 'border-teal-300 bg-teal-50 text-teal-900'
+              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+          }`}
         >
-          <option value="all">Todas as categorias</option>
-          {Object.entries(CATALOG_CATEGORY_LABELS).map(([k, label]) => (
-            <option key={k} value={k}>
-              {label}
-            </option>
-          ))}
-        </select>
+          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>Filtros</span>
+          {activeFiltersCount > 0 && (
+            <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-teal-700 px-1 text-[10px] font-bold text-white">
+              {activeFiltersCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Status filters */}
-      <div className="flex flex-wrap gap-1.5">
-        {(
-          [
-            ['all', 'Todos'],
-            ['expiring', 'A expirar / Expirados'],
-            ['low', 'Stock baixo'],
-            ['leftovers', 'Sobras / Congelados'],
-          ] as [StatusFilter, string][]
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setStatusFilter(key)}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-              statusFilter === key
-                ? 'bg-teal-100 text-teal-900'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
+      {/* Active filter quick-clear chips when panel is collapsed */}
+      {!filtersOpen && activeFiltersCount > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {selectedCategory !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('all')}
+              className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-200"
+              aria-label={`Remover filtro ${CATALOG_CATEGORY_LABELS[selectedCategory]}`}
+            >
+              <span>{CATALOG_CATEGORY_LABELS[selectedCategory]}</span>
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          )}
+          {statusFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-200"
+              aria-label={`Remover filtro ${STATUS_FILTER_LABELS[statusFilter]}`}
+            >
+              <span>{STATUS_FILTER_LABELS[statusFilter]}</span>
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Collapsible Category + Status panel (open by default on PC, collapsed on mobile) */}
+      {filtersOpen && (
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value as CatalogCategory | 'all')}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600 sm:w-48"
+            aria-label="Filtrar por categoria"
           >
-            {label}
-          </button>
-        ))}
-      </div>
+            <option value="all">Todas as categorias</option>
+            {Object.entries(CATALOG_CATEGORY_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>
+                {label}
+              </option>
+            ))}
+          </select>
 
-      {/* Compact View Mode + Sort + Group Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-2.5 py-2 shadow-xs">
+          <div className="flex flex-wrap gap-1">
+            {STATUS_FILTER_OPTIONS.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setStatusFilter(key)}
+                className={`rounded-lg px-2 py-1 text-[11px] font-medium transition ${
+                  statusFilter === key
+                    ? 'bg-teal-100 text-teal-900'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Thin single-row View Mode + Sort + Group toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div
-          className="inline-flex items-center gap-0.5 rounded-xl bg-slate-100 p-0.5"
+          className="inline-flex items-center gap-0.5 rounded-xl bg-slate-200/70 p-0.5"
           role="group"
           aria-label="Modo de visualização"
         >
@@ -864,7 +953,7 @@ export function StockView({
                 aria-pressed={active}
                 aria-label={label}
                 title={label}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition ${
                   active
                     ? 'bg-white text-teal-800 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -880,14 +969,14 @@ export function StockView({
         <div className="flex items-center gap-1.5">
           <div className="relative flex items-center">
             <ArrowUpDown
-              className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400"
+              className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-400"
               aria-hidden="true"
             />
             <select
               value={prefs.sortMode}
               onChange={(e) => updatePrefs({ sortMode: e.target.value as StockSortMode })}
               aria-label="Ordenar stock"
-              className="rounded-xl border border-slate-200 bg-slate-50 py-1.5 pl-7 pr-2.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+              className="rounded-lg border border-slate-200 bg-white py-1 pl-6 pr-2 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
             >
               <option value="expiry">Validade</option>
               <option value="name">Nome A–Z</option>
@@ -900,10 +989,10 @@ export function StockView({
             onClick={() => updatePrefs({ groupByLocation: !prefs.groupByLocation })}
             aria-pressed={prefs.groupByLocation}
             title="Agrupar por localização"
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition ${
+            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition ${
               prefs.groupByLocation
                 ? 'border-teal-300 bg-teal-50 text-teal-900'
-                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
             <FolderTree className="h-3.5 w-3.5" aria-hidden="true" />

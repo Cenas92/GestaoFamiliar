@@ -294,4 +294,72 @@ describe('StockView view modes, symbols, sorting and grouping', () => {
     expect(screen.queryByText('Arroz Cigala')).not.toBeInTheDocument();
     expect(screen.getByText('Leite Mimosa 1L')).toBeInTheDocument();
   });
+
+  it('hides empty locations and collapses filters on mobile with active filter quick-clear chips', () => {
+    const emptyFreezer: StorageLocation = {
+      id: 'loc-freezer-empty',
+      name: 'Congelador',
+      locationType: 'freezer',
+      colorToken: 'blue',
+      icon: 'snowflake',
+      sortOrder: 3,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      deletedAt: null,
+      lastModifiedBy: 'dev-1',
+    };
+
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 375,
+    });
+
+    try {
+      render(
+        <StockView
+          locations={[...LOCATIONS, emptyFreezer]}
+          catalogItems={CATALOG_ITEMS}
+          stockLots={STOCK_LOTS}
+          shoppingItems={[]}
+          recipes={RECIPES}
+          expiryWarningDays={5}
+          deviceId="dev-1"
+        />,
+      );
+
+      // Empty location (0 items) should be hidden from the strip
+      expect(screen.queryByRole('button', { name: /Congelador/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Frigorífico \(2\)/i })).toBeInTheDocument();
+
+      // Filters start collapsed on mobile (< 640px)
+      const filtersBtn = screen.getByRole('button', { name: /Filtros/i });
+      expect(filtersBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByLabelText('Filtrar por categoria')).not.toBeInTheDocument();
+
+      // Expand filters, select a category, then collapse and clear via chip
+      fireEvent.click(filtersBtn);
+      expect(filtersBtn).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.change(screen.getByLabelText('Filtrar por categoria'), {
+        target: { value: 'beverages' },
+      });
+      fireEvent.click(filtersBtn);
+
+      expect(filtersBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByText('Leite Mimosa 1L')).toBeInTheDocument();
+      expect(screen.queryByText('Arroz Cigala')).not.toBeInTheDocument();
+
+      const clearChip = screen.getByRole('button', { name: 'Remover filtro Bebidas' });
+      fireEvent.click(clearChip);
+
+      expect(screen.getByText('Arroz Cigala')).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: originalWidth,
+      });
+    }
+  });
 });
