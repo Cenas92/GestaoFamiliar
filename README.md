@@ -73,17 +73,17 @@ As instruções passo-a-passo também estão integradas dentro da app em **Defin
 3. Clicar em **Criar / Ligar pasta GestaoFamiliar** e autorizar a conta Google.
 4. Clicar em **Sincronizar agora** para criar o ficheiro inicial na pasta `GestaoFamiliar` do teu Google Drive.
 
-### 3. Ligar o 2.º dispositivo
+### 3. Ligar o 2.º dispositivo (Mesma Conta ou Casal)
 
-#### Caso A: Mesma conta Google (ex.: o teu PC + o teu telemóvel)
-1. Abrir a app no 2.º dispositivo → **Definições**.
+#### Se for outra conta Google (Casal): partilhar a pasta primeiro
+1. No Google Drive do 1.º dispositivo (conta A), partilha a pasta **`GestaoFamiliar`** com o Gmail da conta B com permissão de **Editor**.
+2. Confirma que o Gmail da conta B foi adicionado em **Google Auth Platform → Público-alvo → Utilizadores de teste**.
+
+#### Configurar a app no 2.º dispositivo
+1. Abrir a app no 2.º dispositivo → **Definições → Sincronização Privada**.
 2. Colar o mesmo **Google OAuth Client ID** e clicar em **Guardar definições**.
-3. Clicar em **Criar / Ligar pasta GestaoFamiliar** (encontra automaticamente a pasta já existente) — ou copiar o **ID da Pasta Drive** do 1.º dispositivo, colar em **ID da Pasta Drive → Fixar** e clicar em **Sincronizar agora**.
-
-#### Caso B: Duas contas Google diferentes (Casal)
-1. No Google Drive da conta A (1.º dispositivo), partilhar a pasta **`GestaoFamiliar`** com o Gmail da conta B com permissão de **Editor** *(e no telemóvel da conta B, abrir uma vez a pasta em "Partilhado comigo" no Google Drive para ficar visível)*.
-2. Na app do 2.º dispositivo → **Definições**: colar o mesmo **Google OAuth Client ID** + a **Google API Key**, clicar **Guardar definições** e depois **Escolher pasta partilhada (Picker)**.
-3. Selecionar a pasta partilhada `GestaoFamiliar` e clicar em **Sincronizar agora**.
+3. Clicar em **Criar / Ligar pasta GestaoFamiliar** (encontra automaticamente a pasta `GestaoFamiliar` partilhada) — ou copiar o **ID da Pasta Drive** do 1.º dispositivo, colar em **ID da Pasta Drive → Fixar**. *(Opcionalmente também podes usar **Escolher pasta partilhada (Picker)** com uma Chave de API).*
+4. No popup da Google (*"Google não verificou esta app"* por estar em modo Teste), clicar em **Continuar**, **marcar a caixa de seleção de permissão do Google Drive** e clicar em **Sincronizar agora**.
 
 ### Notas rápidas e resolução de problemas
 - **Erro `401 invalid_client`**: normalmente acontece por colar `https://` antes do ID do cliente ou espaços extra, ou por a origem autorizada não coincidir exatamente com `https://<teu-utilizador>.github.io` (nunca incluir `/GestaoFamiliar/`).

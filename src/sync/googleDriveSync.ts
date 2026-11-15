@@ -1,10 +1,12 @@
 const GIS_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
 const GAPI_SCRIPT_URL = 'https://apis.google.com/js/api.js';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+// Full `drive` scope is required so both spouses in Testing mode can read/update shared files
+// created by the other partner inside the shared folder (`drive.file` isolates files per creator).
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
-const TOKEN_STORAGE_KEY = 'gf_google_token_cache';
+const TOKEN_STORAGE_KEY = 'gf_google_token_cache_v2';
 
 export const STATE_FILE_NAME = 'family_state.json';
 export const ATTACHMENTS_FOLDER_NAME = 'attachments';
@@ -13,6 +15,7 @@ export const BACKUPS_FOLDER_NAME = 'backups';
 interface TokenResponse {
   access_token: string;
   expires_in: number;
+  scope?: string;
   error?: string;
 }
 
@@ -79,8 +82,13 @@ function loadCachedTokenFromStorage(): { token: string; expiresAt: number } | nu
   try {
     const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { token?: string; expiresAt?: number };
-    if (parsed.token && parsed.expiresAt && Date.now() < parsed.expiresAt - 30_000) {
+    const parsed = JSON.parse(raw) as { token?: string; expiresAt?: number; scope?: string };
+    if (
+      parsed.token &&
+      parsed.expiresAt &&
+      parsed.scope === DRIVE_SCOPE &&
+      Date.now() < parsed.expiresAt - 30_000
+    ) {
       cachedAccessToken = parsed.token;
       cachedTokenExpiresAt = parsed.expiresAt;
       return { token: parsed.token, expiresAt: parsed.expiresAt };
@@ -96,7 +104,10 @@ function persistToken(token: string, expiresInSeconds: number): void {
   cachedAccessToken = token;
   cachedTokenExpiresAt = expiresAt;
   try {
-    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiresAt }));
+    localStorage.setItem(
+      TOKEN_STORAGE_KEY,
+      JSON.stringify({ token, expiresAt, scope: DRIVE_SCOPE }),
+    );
   } catch {
     // Ignore storage quota errors
   }
@@ -199,6 +210,14 @@ function requestTokenWithLoadedGis(
           );
           return;
         }
+        if (resp.scope && !resp.scope.split(/\s+/).includes(DRIVE_SCOPE)) {
+          finishReject(
+            new GoogleAuthRequiredError(
+              'Falta marcar a caixa de permissão do Google Drive no ecrã da Google. Toca em Sincronizar e ativa a seleção do Drive.',
+            ),
+          );
+          return;
+        }
         persistToken(resp.access_token, resp.expires_in);
         finishResolve(resp.access_token);
       },
@@ -275,6 +294,12 @@ export interface DriveFileMeta {
   name: string;
   mimeType: string;
   modifiedTime?: string;
+  createdTime?: string;
+  size?: string;
+  capabilities?: {
+    canEdit?: boolean;
+    canDelete?: boolean;
+  };
 }
 
 export async function listDriveChildren(
@@ -289,7 +314,7 @@ export async function listDriveChildren(
   }
   const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(
     qParts.join(' and '),
-  )}&fields=files(id,name,mimeType,modifiedTime)&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+  )}&orderBy=createdTime%20asc&pageSize=100&fields=files(id,name,mimeType,modifiedTime,createdTime,size,capabilities(canEdit,canDelete))&supportsAllDrives=true&includeItemsFromAllDrives=true`;
   const resp = await driveFetch(url, token);
   const data = (await resp.json()) as { files?: DriveFileMeta[] };
   return data.files ?? [];
@@ -300,10 +325,19 @@ export async function findOrCreateAppRootFolder(token: string): Promise<{ id: st
     "name = 'GestaoFamiliar' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
   const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(
     q,
-  )}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+  )}&orderBy=createdTime%20asc&fields=files(id,name,shared,createdTime)&supportsAllDrives=true&includeItemsFromAllDrives=true`;
   const resp = await driveFetch(url, token);
-  const data = (await resp.json()) as { files?: DriveFileMeta[] };
+  const data = (await resp.json()) as { files?: Array<{ id: string; name: string }> };
   if (data.files && data.files.length > 0) {
+    // Prefer a folder that already contains a shared family_state.json if duplicates exist
+    for (const candidate of data.files) {
+      const existingState = await listDriveChildren(token, candidate.id, STATE_FILE_NAME).catch(
+        () => [],
+      );
+      if (existingState.length > 0) {
+        return { id: candidate.id, name: candidate.name };
+      }
+    }
     return { id: data.files[0].id, name: data.files[0].name };
   }
 
@@ -427,8 +461,8 @@ export async function uploadDriveFile(
   ]);
 
   const url = params.existingFileId
-    ? `${DRIVE_UPLOAD_BASE}/files/${params.existingFileId}?uploadType=multipart&fields=id`
-    : `${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id`;
+    ? `${DRIVE_UPLOAD_BASE}/files/${params.existingFileId}?uploadType=multipart&fields=id&supportsAllDrives=true`
+    : `${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id&supportsAllDrives=true`;
 
   const resp = await driveFetch(url, token, {
     method: params.existingFileId ? 'PATCH' : 'POST',

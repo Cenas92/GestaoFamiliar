@@ -212,6 +212,22 @@ export interface SyncConfigInput {
 let activeSyncPromise: Promise<SyncExecutionResult> | null = null;
 
 /**
+ * Folds multiple remote snapshots (e.g. if a second family_state.json was created before sharing)
+ * into a single merged remote snapshot using standard LWW merge rules.
+ */
+export function combineRemoteSnapshots(
+  snapshots: FamilySyncSnapshot[],
+  deviceId: string,
+): FamilySyncSnapshot | null {
+  if (snapshots.length === 0) return null;
+  let combined = snapshots[0];
+  for (let i = 1; i < snapshots.length; i += 1) {
+    combined = mergeFamilySnapshots(combined, snapshots[i], [], deviceId).mergedSnapshot;
+  }
+  return combined;
+}
+
+/**
  * Runs a full bidirectional Google Drive sync.
  * Pass explicit config from React state when triggered from a click handler so OAuth popup
  * stays synchronous with the user gesture (critical for mobile browsers).
@@ -274,20 +290,27 @@ async function executeGoogleDriveSync(
       ensureSubfolder(token, folderId, BACKUPS_FOLDER_NAME),
     ]);
 
-    const stateFile = rootFiles.find((f) => f.name === STATE_FILE_NAME);
+    const stateFiles = rootFiles.filter((f) => f.name === STATE_FILE_NAME);
+    const primaryStateFile =
+      stateFiles.find((f) => f.capabilities?.canEdit !== false) ?? stateFiles[0];
     const { snapshot: localSnapshot, attachments: localAttachments, deviceId } =
       await buildLocalSnapshot();
 
-    let remoteSnapshot: FamilySyncSnapshot | null = null;
-    if (stateFile) {
-      const remoteText = await downloadDriveFileText(token, stateFile.id);
+    const parsedRemotes: FamilySyncSnapshot[] = [];
+    for (const sf of stateFiles) {
+      const remoteText = await downloadDriveFileText(token, sf.id);
       if (remoteText.trim()) {
-        const parsed = JSON.parse(remoteText) as FamilySyncSnapshot;
-        if (parsed.schemaVersion === 1) {
-          remoteSnapshot = parsed;
+        try {
+          const parsed = JSON.parse(remoteText) as FamilySyncSnapshot;
+          if (parsed.schemaVersion === 1) {
+            parsedRemotes.push(parsed);
+          }
+        } catch {
+          // Ignore malformed duplicate file
         }
       }
     }
+    const remoteSnapshot = combineRemoteSnapshots(parsedRemotes, deviceId);
 
     let finalSnapshot = localSnapshot;
     let addedFromRemote = 0;
@@ -391,8 +414,15 @@ async function executeGoogleDriveSync(
       fileName: STATE_FILE_NAME,
       mimeType: 'application/json',
       content: JSON.stringify(finalSnapshot),
-      existingFileId: stateFile?.id ?? null,
+      existingFileId: primaryStateFile?.id ?? null,
     });
+
+    // Best-effort cleanup of any duplicate family_state.json files after merging them
+    for (const dup of stateFiles) {
+      if (primaryStateFile && dup.id !== primaryStateFile.id) {
+        await deleteDriveFile(token, dup.id).catch(() => {});
+      }
+    }
 
     await db.settings.update('singleton', {
       lastSyncAt: nowIso(),

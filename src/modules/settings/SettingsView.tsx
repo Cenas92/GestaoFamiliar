@@ -715,14 +715,14 @@ export function SettingsView({
                 gratuito.
               </li>
               <li>
-                Na pesquisa de topo, ativa <strong>Google Drive API</strong> (e{' '}
-                <strong>Google Picker API</strong> se usares 2 contas Gmail diferentes).
+                Na pesquisa de topo, ativa <strong>Google Drive API</strong> (e opcionalmente{' '}
+                <strong>Google Picker API</strong>).
               </li>
               <li>
                 No menu <strong>Google Auth Platform → Visão geral → Vamos começar</strong> (ou{' '}
-                <em>Branding</em> e <em>Público-alvo</em>): escolhe <em>Externo</em> e, em{' '}
-                <strong>Público-alvo → Utilizadores de teste</strong>, adiciona os emails Gmail que
-                vão usar a app (o teu e o do cônjuge).
+                <em>Branding</em> e <em>Público-alvo</em>): escolhe <em>Externo</em> (modo{' '}
+                <em>Em teste</em>) e, em <strong>Público-alvo → Utilizadores de teste</strong>,
+                adiciona os emails Gmail que vão usar a app (o teu e o do cônjuge).
               </li>
               <li>
                 Em <strong>Google Auth Platform → Clientes → Criar cliente</strong> (
@@ -738,20 +738,21 @@ export function SettingsView({
               </li>
               <li>
                 <strong>1.º dispositivo:</strong> clica em{' '}
-                <em>Criar / Ligar pasta GestaoFamiliar</em> e depois em <em>Sincronizar agora</em>.
+                <em>Criar / Ligar pasta GestaoFamiliar</em>; no ecrã da Google clica{' '}
+                <em>Continuar</em> e <strong>marca a caixa de permissão do Google Drive</strong>.
+                Depois clica em <em>Sincronizar agora</em>.
               </li>
               <li>
-                <strong>2.º dispositivo (mesma conta Google, ex.: PC + telemóvel):</strong> cola o
-                mesmo <em>ID do cliente</em>, guarda e clica em{' '}
-                <em>Criar / Ligar pasta GestaoFamiliar</em> (liga logo à mesma pasta) ou fixa o{' '}
-                <em>ID da Pasta Drive</em>.
+                <strong>Casal (outra conta Google):</strong> no Google Drive do 1.º dispositivo,
+                partilha a pasta <code>GestaoFamiliar</code> com o outro Gmail como{' '}
+                <strong>Editor</strong>.
               </li>
               <li>
-                <strong>2.º dispositivo (conta diferente / Casal):</strong> partilha a pasta{' '}
-                <code>GestaoFamiliar</code> no Google Drive com o outro Gmail como{' '}
-                <em>Editor</em>, cria uma <strong>Chave de API</strong> em{' '}
-                <em>APIs e serviços → Credenciais</em>, cola-a em <em>Google API Key</em> no 2.º
-                telemóvel e clica em <em>Escolher pasta partilhada (Picker)</em>.
+                <strong>2.º dispositivo (mesma conta ou Casal):</strong> cola o mesmo{' '}
+                <em>ID do cliente</em>, guarda e clica em{' '}
+                <em>Criar / Ligar pasta GestaoFamiliar</em> (ou cola o mesmo{' '}
+                <em>ID da Pasta Drive → Fixar</em>), autoriza marcando a caixa do Drive e clica{' '}
+                <em>Sincronizar agora</em>.
               </li>
             </ol>
 
