@@ -39,6 +39,7 @@ export async function buildLocalSnapshot(): Promise<{
   const [
     settings,
     locations,
+    supermarketSections,
     catalogItems,
     stockLots,
     recipes,
@@ -49,6 +50,7 @@ export async function buildLocalSnapshot(): Promise<{
   ] = await Promise.all([
     db.settings.get('singleton'),
     db.locations.toArray(),
+    db.supermarketSections.toArray(),
     db.catalogItems.toArray(),
     db.stockLots.toArray(),
     db.recipes.toArray(),
@@ -68,6 +70,7 @@ export async function buildLocalSnapshot(): Promise<{
       exportedAt: nowIso(),
       exportedByDevice: deviceId,
       locations,
+      supermarketSections,
       catalogItems,
       stockLots,
       recipes,
@@ -88,11 +91,13 @@ export async function buildLocalSnapshot(): Promise<{
 }
 
 export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Promise<void> {
+  const supermarketSections = snapshot.supermarketSections ?? [];
   await withSuppressedAutoSync(async () => {
     await db.transaction(
       'rw',
       [
         db.locations,
+        db.supermarketSections,
         db.catalogItems,
         db.stockLots,
         db.recipes,
@@ -102,6 +107,7 @@ export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Prom
       ],
       async () => {
         if (snapshot.locations.length) await db.locations.bulkPut(snapshot.locations);
+        if (supermarketSections.length) await db.supermarketSections.bulkPut(supermarketSections);
         if (snapshot.catalogItems.length) await db.catalogItems.bulkPut(snapshot.catalogItems);
         if (snapshot.stockLots.length) await db.stockLots.bulkPut(snapshot.stockLots);
         if (snapshot.recipes.length) await db.recipes.bulkPut(snapshot.recipes);
@@ -355,6 +361,7 @@ async function executeGoogleDriveSync(
       }
     } else {
       localChangesPushed =
+        (localSnapshot.supermarketSections?.length ?? 0) +
         localSnapshot.stockLots.length +
         localSnapshot.recipes.length +
         localSnapshot.mealPlan.length +

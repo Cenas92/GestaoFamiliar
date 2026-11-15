@@ -25,6 +25,7 @@ import type {
   ShoppingItem,
   StockLot,
   StorageLocation,
+  SupermarketSectionConfig,
 } from '../../types/domain';
 import { formatDatePt, normalizeText, todayDateString } from '../../utils/units';
 import { shouldExpandPanelsByDefault, type UiDensityMode } from '../../utils/viewPrefs';
@@ -48,6 +49,7 @@ interface RecipesViewProps {
   stockLots: StockLot[];
   catalogItems: CatalogItem[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   members: HouseholdMember[];
   shoppingItems: ShoppingItem[];
   expiryWarningDays: number;
@@ -373,6 +375,7 @@ export function RecipesView({
   stockLots,
   catalogItems,
   locations,
+  supermarketSections,
   members,
   shoppingItems,
   expiryWarningDays,
@@ -814,6 +817,7 @@ export function RecipesView({
         editingRecipe={editingRecipe}
         catalogItems={catalogItems}
         locations={locations}
+        supermarketSections={supermarketSections}
         members={members}
         deviceId={deviceId}
       />

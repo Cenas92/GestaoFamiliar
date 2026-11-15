@@ -6,6 +6,7 @@ import type {
   StockLot,
   StorageLocation,
   SupermarketSection,
+  SupermarketSectionConfig,
 } from '../../types/domain';
 import { getSupermarketSectionVisual } from '../../utils/sectionVisuals';
 import {
@@ -22,6 +23,7 @@ export interface StockLotDisplayMeta {
   lot: StockLot;
   catalogItem?: CatalogItem;
   location?: StorageLocation;
+  sectionLabel?: string;
   visual: StockTypeVisual;
   expiry: LotExpiryInfo;
   step: number;
@@ -88,12 +90,16 @@ const CATEGORY_FALLBACK_SECTION: Record<CatalogCategory, SupermarketSection> = {
  * Resolves the generic visual symbol and palette for a stock lot from leftover state,
  * catalog supermarket section, or catalog category fallback.
  */
-export function getStockTypeVisual(lot: StockLot, catalogItem?: CatalogItem): StockTypeVisual {
+export function getStockTypeVisual(
+  lot: StockLot,
+  catalogItem?: CatalogItem,
+  supermarketSections?: SupermarketSectionConfig[],
+): StockTypeVisual {
   if (lot.isLeftover) return LEFTOVER_VISUAL;
-  if (!catalogItem) return getSupermarketSectionVisual('other');
+  if (!catalogItem) return getSupermarketSectionVisual('other', supermarketSections);
   const section =
     catalogItem.supermarketSection ?? CATEGORY_FALLBACK_SECTION[catalogItem.category] ?? 'other';
-  return getSupermarketSectionVisual(section);
+  return getSupermarketSectionVisual(section, supermarketSections);
 }
 
 export const StockTypeBadge = TypeIconBadge;

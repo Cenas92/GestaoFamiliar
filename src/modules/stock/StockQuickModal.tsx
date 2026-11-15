@@ -256,7 +256,7 @@ export function StockQuickModal({
             {catalogItem && (
               <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                 {CATALOG_CATEGORY_LABELS[catalogItem.category]} ·{' '}
-                {SUPERMARKET_SECTION_LABELS[catalogItem.supermarketSection]}
+                {meta.sectionLabel ?? SUPERMARKET_SECTION_LABELS[catalogItem.supermarketSection] ?? 'Outros'}
               </span>
             )}
           </div>

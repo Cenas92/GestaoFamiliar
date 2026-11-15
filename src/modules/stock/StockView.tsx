@@ -31,8 +31,10 @@ import type {
   ShoppingItem,
   StockLot,
   StorageLocation,
+  SupermarketSectionConfig,
 } from '../../types/domain';
 import { nowIso } from '../../utils/id';
+import { getSupermarketSectionLabel } from '../../utils/sectionVisuals';
 import {
   daysBetweenDateStrings,
   formatDatePt,
@@ -63,6 +65,7 @@ import {
 
 interface StockViewProps {
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   catalogItems: CatalogItem[];
   stockLots: StockLot[];
   shoppingItems: ShoppingItem[];
@@ -162,7 +165,9 @@ function CardLotItem({
               {detailed && catalogItem && (
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
                   {CATALOG_CATEGORY_LABELS[catalogItem.category]} ·{' '}
-                  {SUPERMARKET_SECTION_LABELS[catalogItem.supermarketSection]}
+                  {meta.sectionLabel ??
+                    SUPERMARKET_SECTION_LABELS[catalogItem.supermarketSection] ??
+                    'Outros'}
                 </span>
               )}
             </div>
@@ -402,6 +407,7 @@ function GridLotTile({
 
 export function StockView({
   locations,
+  supermarketSections,
   catalogItems,
   stockLots,
   shoppingItems,
@@ -548,7 +554,10 @@ export function StockView({
     return filteredLots.map((lot) => {
       const catalogItem = catalogById.get(lot.catalogItemId);
       const location = locationsById.get(lot.locationId);
-      const visual = getStockTypeVisual(lot, catalogItem);
+      const sectionLabel = catalogItem
+        ? getSupermarketSectionLabel(catalogItem.supermarketSection, supermarketSections)
+        : undefined;
+      const visual = getStockTypeVisual(lot, catalogItem, supermarketSections);
       const expiry = getLotExpiryInfo(lot, expiryWarningDays, today);
       const step = getStepForUnit(lot.unit);
       const daysFrozenOrCooked = lot.frozenOrCookedAt
@@ -567,6 +576,7 @@ export function StockView({
         lot,
         catalogItem,
         location,
+        sectionLabel,
         visual,
         expiry,
         step,
@@ -576,7 +586,16 @@ export function StockView({
         quantityLabel,
       };
     });
-  }, [filteredLots, catalogById, locationsById, recipesById, expiryWarningDays, today, lowCatalogIds]);
+  }, [
+    filteredLots,
+    catalogById,
+    locationsById,
+    supermarketSections,
+    recipesById,
+    expiryWarningDays,
+    today,
+    lowCatalogIds,
+  ]);
 
   const metaById = useMemo(
     () => new Map(lotMetas.map((m) => [m.lot.id, m])),
@@ -1113,6 +1132,7 @@ export function StockView({
         editingLot={editingLot}
         catalogItems={catalogItems}
         locations={locations}
+        supermarketSections={supermarketSections}
         deviceId={deviceId}
         initialLocationId={selectedLocationId !== 'all' ? selectedLocationId : undefined}
       />
@@ -1122,6 +1142,7 @@ export function StockView({
         onClose={() => setCatalogModalOpen(false)}
         catalogItems={catalogItems}
         locations={locations}
+        supermarketSections={supermarketSections}
         deviceId={deviceId}
       />
     </div>

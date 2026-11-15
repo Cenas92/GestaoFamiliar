@@ -1,7 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db/database';
-import type { CatalogItem, ShoppingItem, StorageLocation } from '../../types/domain';
+import type {
+  CatalogItem,
+  ShoppingItem,
+  StorageLocation,
+  SupermarketSectionConfig,
+} from '../../types/domain';
 import { ShoppingView } from './ShoppingView';
 import { SHOPPING_PREFS_STORAGE_KEY } from './shoppingVisuals';
 
@@ -231,5 +236,52 @@ describe('ShoppingView compact layout, 4 view modes, quick edit modal and collap
         value: originalWidth,
       });
     }
+  });
+
+  it('respects custom supermarketSections order and labels when grouping items', () => {
+    const customSections: SupermarketSectionConfig[] = [
+      {
+        id: 'pantry',
+        name: 'Mercearia Bio',
+        colorToken: 'violet',
+        icon: 'wheat',
+        sortOrder: 1,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-11-15T10:00:00.000Z',
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      },
+      {
+        id: 'produce',
+        name: 'Horta & Fruta',
+        colorToken: 'emerald',
+        icon: 'carrot',
+        sortOrder: 2,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-11-15T10:00:00.000Z',
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      },
+    ];
+
+    render(
+      <ShoppingView
+        shoppingItems={SHOPPING_ITEMS}
+        catalogItems={CATALOG_ITEMS}
+        stockLots={[]}
+        locations={LOCATIONS}
+        supermarketSections={customSections}
+        expiryWarningDays={5}
+        deviceId="dev-1"
+      />,
+    );
+
+    const headers = screen
+      .getAllByRole('button')
+      .filter((b) => b.hasAttribute('aria-expanded') && /Mercearia Bio|Horta & Fruta/.test(b.textContent ?? ''));
+
+    expect(headers).toHaveLength(2);
+    expect(headers[0].textContent).toContain('Mercearia Bio');
+    expect(headers[1].textContent).toContain('Horta & Fruta');
   });
 });

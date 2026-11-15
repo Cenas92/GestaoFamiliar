@@ -19,11 +19,7 @@ import { CatalogPicker } from '../../components/CatalogPicker';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
 import { Modal } from '../../components/Modal';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
-import {
-  SUPERMARKET_SECTION_LABELS,
-  SUPERMARKET_SECTION_ORDER,
-  UNITS,
-} from '../../constants/labels';
+import { UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
 import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
 import type {
@@ -32,10 +28,15 @@ import type {
   StockLot,
   StorageLocation,
   SupermarketSection,
+  SupermarketSectionConfig,
   Unit,
 } from '../../types/domain';
 import { nowIso } from '../../utils/id';
-import { getSupermarketSectionVisual } from '../../utils/sectionVisuals';
+import {
+  getOrderedSupermarketSections,
+  getSupermarketSectionLabel,
+  getSupermarketSectionVisual,
+} from '../../utils/sectionVisuals';
 import {
   formatQuantity,
   getStepForUnit,
@@ -62,6 +63,7 @@ interface ShoppingViewProps {
   catalogItems: CatalogItem[];
   stockLots: StockLot[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   expiryWarningDays: number;
   deviceId: string;
   uiDensity?: UiDensityMode;
@@ -84,13 +86,10 @@ const STATUS_LABELS: Record<ShoppingStatusFilter, string> = {
   checked: 'No carrinho',
 };
 
-const SECTION_RANK = new Map<SupermarketSection, number>(
-  SUPERMARKET_SECTION_ORDER.map((sec, idx) => [sec, idx]),
-);
-
 function sortShoppingMetas(
   items: ShoppingItemDisplayMeta[],
   sortMode: ShoppingSortMode,
+  sectionRankMap: Map<SupermarketSection, number>,
 ): ShoppingItemDisplayMeta[] {
   return [...items].sort((a, b) => {
     if (sortMode === 'name') {
@@ -102,7 +101,7 @@ function sortShoppingMetas(
       if (checkDiff !== 0) return checkDiff;
     } else {
       const secDiff =
-        (SECTION_RANK.get(a.item.section) ?? 99) - (SECTION_RANK.get(b.item.section) ?? 99);
+        (sectionRankMap.get(a.item.section) ?? 999) - (sectionRankMap.get(b.item.section) ?? 999);
       if (secDiff !== 0) return secDiff;
       const checkDiff = Number(a.item.checked) - Number(b.item.checked);
       if (checkDiff !== 0) return checkDiff;
@@ -392,10 +391,19 @@ export function ShoppingView({
   catalogItems,
   stockLots,
   locations,
+  supermarketSections,
   expiryWarningDays,
   deviceId,
   uiDensity = 'clean',
 }: ShoppingViewProps) {
+  const orderedSections = useMemo(
+    () => getOrderedSupermarketSections(supermarketSections),
+    [supermarketSections],
+  );
+  const sectionRankMap = useMemo(
+    () => new Map(orderedSections.map((sec, idx) => [sec.id, idx])),
+    [orderedSections],
+  );
   const isComplete = uiDensity === 'complete';
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogItem | null>(null);
   const [freeText, setFreeText] = useState('');
@@ -459,11 +467,22 @@ export function ShoppingView({
   );
   const uncheckedCount = shoppingItems.length - checkedItems.length;
 
+  const effectiveSection = useMemo(
+    () =>
+      orderedSections.some((sec) => sec.id === section)
+        ? section
+        : (orderedSections[0]?.id ?? 'other'),
+    [orderedSections, section],
+  );
+
   const availableSections = useMemo(() => {
     const present = new Set(shoppingItems.map((i) => i.section));
     if (sectionFilter !== 'all') present.add(sectionFilter);
-    return SUPERMARKET_SECTION_ORDER.filter((s) => present.has(s));
-  }, [shoppingItems, sectionFilter]);
+    const known = orderedSections.filter((s) => present.has(s.id)).map((s) => s.id);
+    const knownSet = new Set(known);
+    const extras = Array.from(present).filter((id) => !knownSet.has(id));
+    return [...known, ...extras];
+  }, [shoppingItems, sectionFilter, orderedSections]);
 
   const availableSources = useMemo(() => {
     const present = new Set(shoppingItems.map((i) => i.source));
@@ -490,15 +509,15 @@ export function ShoppingView({
 
     const metas: ShoppingItemDisplayMeta[] = filtered.map((item) => ({
       item,
-      visual: getShoppingItemVisual(item),
+      visual: getShoppingItemVisual(item, supermarketSections),
       targetLocation: item.targetLocationId ? locationsById.get(item.targetLocationId) : undefined,
-      sectionLabel: SUPERMARKET_SECTION_LABELS[item.section],
+      sectionLabel: getSupermarketSectionLabel(item.section, supermarketSections),
       sourceLabel: SHOPPING_SOURCE_LABELS[item.source],
       quantityLabel: formatQuantity(item.quantity, item.unit),
       step: getStepForUnit(item.unit),
     }));
 
-    return sortShoppingMetas(metas, prefs.sortMode);
+    return sortShoppingMetas(metas, prefs.sortMode, sectionRankMap);
   }, [
     shoppingItems,
     statusFilter,
@@ -506,7 +525,9 @@ export function ShoppingView({
     sourceFilter,
     search,
     locationsById,
+    supermarketSections,
     prefs.sortMode,
+    sectionRankMap,
   ]);
 
   const metaById = useMemo(
@@ -527,13 +548,19 @@ export function ShoppingView({
       }
     }
 
-    return SUPERMARKET_SECTION_ORDER.map((sec) => ({
-      section: sec,
-      label: SUPERMARKET_SECTION_LABELS[sec],
-      visual: getSupermarketSectionVisual(sec),
-      items: bySec.get(sec) ?? [],
-    })).filter((g) => g.items.length > 0);
-  }, [prefs.groupEnabled, filteredMetas]);
+    const orderedIds = orderedSections.map((sec) => sec.id);
+    const orderedIdSet = new Set(orderedIds);
+    const extraIds = Array.from(bySec.keys()).filter((id) => !orderedIdSet.has(id));
+
+    return [...orderedIds, ...extraIds]
+      .map((sec) => ({
+        section: sec,
+        label: getSupermarketSectionLabel(sec, supermarketSections),
+        visual: getSupermarketSectionVisual(sec, supermarketSections),
+        items: bySec.get(sec) ?? [],
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [prefs.groupEnabled, filteredMetas, orderedSections, supermarketSections]);
 
   const activeFiltersCount =
     (sectionFilter !== 'all' ? 1 : 0) + (sourceFilter !== 'all' ? 1 : 0);
@@ -554,7 +581,7 @@ export function ShoppingView({
         label,
         quantity: Number(qty.replace(',', '.')) || 1,
         unit,
-        section: selectedCatalog ? selectedCatalog.supermarketSection : section,
+        section: selectedCatalog ? selectedCatalog.supermarketSection : effectiveSection,
         targetLocationId: selectedCatalog?.defaultLocationId ?? locations[0]?.id ?? null,
         source: 'manual',
       },
@@ -884,6 +911,7 @@ export function ShoppingView({
               key={selectedCatalog?.id ?? 'empty'}
               catalogItems={catalogItems}
               locations={locations}
+              supermarketSections={supermarketSections}
               deviceId={deviceId}
               selectedId={selectedCatalog?.id ?? null}
               onSelect={(cat) => {
@@ -903,14 +931,14 @@ export function ShoppingView({
                 className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-teal-600"
               />
               <select
-                value={section}
-                onChange={(e) => setSection(e.target.value as SupermarketSection)}
+                value={effectiveSection}
+                onChange={(e) => setSection(e.target.value)}
                 aria-label="Secção do item"
                 className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-teal-600"
               >
-                {SUPERMARKET_SECTION_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {SUPERMARKET_SECTION_LABELS[s]}
+                {orderedSections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
                   </option>
                 ))}
               </select>
@@ -1004,9 +1032,9 @@ export function ShoppingView({
               type="button"
               onClick={() => setSectionFilter('all')}
               className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-200"
-              aria-label={`Remover filtro ${SUPERMARKET_SECTION_LABELS[sectionFilter]}`}
+              aria-label={`Remover filtro ${getSupermarketSectionLabel(sectionFilter, supermarketSections)}`}
             >
-              <span>{SUPERMARKET_SECTION_LABELS[sectionFilter]}</span>
+              <span>{getSupermarketSectionLabel(sectionFilter, supermarketSections)}</span>
               <X className="h-3 w-3" aria-hidden="true" />
             </button>
           )}
@@ -1037,7 +1065,7 @@ export function ShoppingView({
               <option value="all">Secção: Todas</option>
               {availableSections.map((s) => (
                 <option key={s} value={s}>
-                  {SUPERMARKET_SECTION_LABELS[s]}
+                  {getSupermarketSectionLabel(s, supermarketSections)}
                 </option>
               ))}
             </select>
@@ -1134,6 +1162,7 @@ export function ShoppingView({
         onClose={() => setQuickItemId(null)}
         meta={activeQuickMeta}
         locations={locations}
+        supermarketSections={supermarketSections}
         onToggleChecked={toggleChecked}
         onSaveItem={saveQuickEdit}
         onDeleteItem={deleteItem}

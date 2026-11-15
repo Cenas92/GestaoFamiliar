@@ -16,6 +16,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ShoppingBasket,
   Sparkles,
   Trash2,
   Upload,
@@ -46,17 +47,22 @@ import type {
   HouseholdRole,
   LocationColorToken,
   LocationType,
+  ShoppingItem,
   StorageLocation,
+  SupermarketSectionConfig,
 } from '../../types/domain';
 import { createSyncMetadata, nowIso } from '../../utils/id';
 import type { UiDensityMode } from '../../utils/viewPrefs';
 import { CatalogManagerModal } from '../stock/CatalogManagerModal';
+import { SupermarketSectionsEditor } from './SupermarketSectionsEditor';
 
 interface SettingsViewProps {
   settings: AppSettings;
   members: HouseholdMember[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   catalogItems?: CatalogItem[];
+  shoppingItems?: ShoppingItem[];
   uiDensity?: UiDensityMode;
   onChangeUiDensity?: (mode: UiDensityMode) => void;
   onSyncNow: () => Promise<string>;
@@ -190,6 +196,7 @@ type SettingsSectionId =
   | 'interface'
   | 'members'
   | 'locations'
+  | 'sections'
   | 'catalog'
   | 'sync'
   | 'backup'
@@ -244,7 +251,9 @@ export function SettingsView({
   settings,
   members,
   locations,
+  supermarketSections = [],
   catalogItems = [],
+  shoppingItems = [],
   uiDensity = 'clean',
   onChangeUiDensity,
   onSyncNow,
@@ -769,6 +778,23 @@ export function SettingsView({
         </form>
       </AccordionSection>
 
+      {/* Supermarket Sections / Aisles */}
+      <AccordionSection
+        title="Corredores do Supermercado"
+        icon={<ShoppingBasket className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${supermarketSections.length || 12}`}
+        isOpen={openSection === 'sections'}
+        onToggle={() => toggleSection('sections')}
+      >
+        <SupermarketSectionsEditor
+          sections={supermarketSections}
+          catalogItems={catalogItems}
+          shoppingItems={shoppingItems}
+          deviceId={settings.deviceId}
+          onNotify={(msg) => setStatusMsg(msg)}
+        />
+      </AccordionSection>
+
       {/* Product Catalog & Minimum Stock Settings */}
       <AccordionSection
         title="Catálogo de Produtos Base"
@@ -1110,6 +1136,7 @@ export function SettingsView({
         onClose={() => setCatalogModalOpen(false)}
         catalogItems={catalogItems}
         locations={locations}
+        supermarketSections={supermarketSections}
         deviceId={settings.deviceId}
       />
     </div>

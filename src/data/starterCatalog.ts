@@ -5,9 +5,11 @@ import type {
   LocationType,
   StorageLocation,
   SupermarketSection,
+  SupermarketSectionConfig,
   TrackingMode,
   Unit,
 } from '../types/domain';
+import { DEFAULT_SUPERMARKET_SECTION_SPECS } from '../utils/sectionVisuals';
 
 const SEED_TIMESTAMP = '2026-01-01T00:00:00.000Z';
 
@@ -223,6 +225,20 @@ const RAW_CATALOG: CatalogSeed[] = [
 export function buildStarterLocations(deviceId: string): StorageLocation[] {
   return STARTER_LOCATIONS.map((loc) => ({
     ...loc,
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+    deletedAt: null,
+    lastModifiedBy: deviceId,
+  }));
+}
+
+export function buildStarterSupermarketSections(deviceId: string): SupermarketSectionConfig[] {
+  return DEFAULT_SUPERMARKET_SECTION_SPECS.map((spec) => ({
+    id: spec.id,
+    name: spec.name,
+    colorToken: spec.colorToken,
+    icon: spec.icon,
+    sortOrder: spec.sortOrder,
     createdAt: SEED_TIMESTAMP,
     updatedAt: SEED_TIMESTAMP,
     deletedAt: null,

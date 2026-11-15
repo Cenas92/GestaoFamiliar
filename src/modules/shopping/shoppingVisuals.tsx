@@ -1,5 +1,9 @@
 import type { TypeVisualMeta } from '../../components/TypeIconBadge';
-import type { ShoppingItem, StorageLocation } from '../../types/domain';
+import type {
+  ShoppingItem,
+  StorageLocation,
+  SupermarketSectionConfig,
+} from '../../types/domain';
 import { getSupermarketSectionVisual } from '../../utils/sectionVisuals';
 import {
   loadCollectionPreferences,
@@ -55,8 +59,11 @@ export function saveShoppingViewPreferences(prefs: ShoppingViewPreferences): voi
   saveCollectionPreferences(SHOPPING_PREFS_STORAGE_KEY, prefs);
 }
 
-export function getShoppingItemVisual(item: ShoppingItem): TypeVisualMeta {
-  return getSupermarketSectionVisual(item.section);
+export function getShoppingItemVisual(
+  item: ShoppingItem,
+  supermarketSections?: SupermarketSectionConfig[],
+): TypeVisualMeta {
+  return getSupermarketSectionVisual(item.section, supermarketSections);
 }
 
 export interface ShoppingItemDisplayMeta {

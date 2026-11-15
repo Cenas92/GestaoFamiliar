@@ -559,6 +559,7 @@ export function App() {
         {activeTab === 'stock' && (
           <StockView
             locations={data.locations}
+            supermarketSections={data.supermarketSections}
             catalogItems={data.catalogItems}
             stockLots={data.stockLots}
             shoppingItems={data.shoppingItems}
@@ -577,6 +578,7 @@ export function App() {
             stockLots={data.stockLots}
             catalogItems={data.catalogItems}
             locations={data.locations}
+            supermarketSections={data.supermarketSections}
             members={data.members}
             shoppingItems={data.shoppingItems}
             expiryWarningDays={data.settings.expiryWarningDays}
@@ -609,6 +611,7 @@ export function App() {
             catalogItems={data.catalogItems}
             stockLots={data.stockLots}
             locations={data.locations}
+            supermarketSections={data.supermarketSections}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
             uiDensity={uiDensity}
@@ -620,7 +623,9 @@ export function App() {
             settings={data.settings}
             members={data.members}
             locations={data.locations}
+            supermarketSections={data.supermarketSections}
             catalogItems={data.catalogItems}
+            shoppingItems={data.shoppingItems}
             uiDensity={uiDensity}
             onChangeUiDensity={handleChangeUiDensity}
             onSyncNow={handleSyncNow}

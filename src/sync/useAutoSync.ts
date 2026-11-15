@@ -117,6 +117,7 @@ export function useAutoSync(settings: AppSettings | undefined) {
   useEffect(() => {
     const syncedTables = [
       db.locations,
+      db.supermarketSections,
       db.catalogItems,
       db.stockLots,
       db.recipes,

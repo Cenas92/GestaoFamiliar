@@ -18,6 +18,7 @@ import type {
   RecipeIngredient,
   RecipeStep,
   StorageLocation,
+  SupermarketSectionConfig,
   Unit,
 } from '../../types/domain';
 import { createId, createSyncMetadata, nowIso } from '../../utils/id';
@@ -29,6 +30,7 @@ interface RecipeFormModalProps {
   editingRecipe: Recipe | null;
   catalogItems: CatalogItem[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   members: HouseholdMember[];
   deviceId: string;
 }
@@ -39,6 +41,7 @@ export function RecipeFormModal({
   editingRecipe,
   catalogItems,
   locations,
+  supermarketSections,
   members,
   deviceId,
 }: RecipeFormModalProps) {
@@ -420,6 +423,7 @@ export function RecipeFormModal({
                       key={`${ing.id}-${ing.catalogItemId}`}
                       catalogItems={catalogItems}
                       locations={locations}
+                      supermarketSections={supermarketSections}
                       deviceId={deviceId}
                       selectedId={ing.catalogItemId || null}
                       onSelect={(item) =>
@@ -543,6 +547,7 @@ export function RecipeFormModal({
                         (c) => c.id !== ing.catalogItemId && !ing.substituteCatalogIds.includes(c.id),
                       )}
                       locations={locations}
+                      supermarketSections={supermarketSections}
                       deviceId={deviceId}
                       selectedId={null}
                       placeholder="Procurar substituto (ex: Iogurte natural)..."

@@ -7,6 +7,7 @@ import type {
   ShoppingItem,
   StockLot,
   StorageLocation,
+  SupermarketSectionConfig,
   SyncMetadata,
 } from '../types/domain';
 import { nowIso } from '../utils/id';
@@ -26,6 +27,7 @@ export interface FamilySyncSnapshot {
   exportedAt: string;
   exportedByDevice: string;
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   catalogItems: CatalogItem[];
   stockLots: StockLot[];
   recipes: Recipe[];
@@ -180,6 +182,10 @@ export function mergeFamilySnapshots(
   deviceId: string,
 ): FullMergeOutcome {
   const locations = mergeSyncCollections(local.locations, remote.locations);
+  const supermarketSections = mergeSyncCollections(
+    local.supermarketSections ?? [],
+    remote.supermarketSections ?? [],
+  );
   const catalogItems = mergeSyncCollections(local.catalogItems, remote.catalogItems);
   const stockLots = mergeSyncCollections(local.stockLots, remote.stockLots);
   const recipes = mergeSyncCollections(local.recipes, remote.recipes);
@@ -191,6 +197,7 @@ export function mergeFamilySnapshots(
 
   const collections = [
     locations,
+    supermarketSections,
     catalogItems,
     stockLots,
     recipes,
@@ -209,6 +216,7 @@ export function mergeFamilySnapshots(
       exportedAt: nowIso(),
       exportedByDevice: deviceId,
       locations: locations.merged,
+      supermarketSections: supermarketSections.merged,
       catalogItems: catalogItems.merged,
       stockLots: stockLots.merged,
       recipes: recipes.merged,

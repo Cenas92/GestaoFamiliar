@@ -1,18 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Save, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/Modal';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
-import {
-  SUPERMARKET_SECTION_LABELS,
-  SUPERMARKET_SECTION_ORDER,
-  UNITS,
-} from '../../constants/labels';
+import { UNITS } from '../../constants/labels';
 import type {
   ShoppingItem,
   StorageLocation,
   SupermarketSection,
+  SupermarketSectionConfig,
   Unit,
 } from '../../types/domain';
+import { getOrderedSupermarketSections } from '../../utils/sectionVisuals';
 import { getStepForUnit } from '../../utils/units';
 import type { ShoppingItemDisplayMeta } from './shoppingVisuals';
 
@@ -21,6 +19,7 @@ interface ShoppingQuickModalProps {
   onClose: () => void;
   meta: ShoppingItemDisplayMeta | null;
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   onToggleChecked: (item: ShoppingItem) => void;
   onSaveItem: (
     item: ShoppingItem,
@@ -37,10 +36,15 @@ export function ShoppingQuickModal({
   onClose,
   meta,
   locations,
+  supermarketSections,
   onToggleChecked,
   onSaveItem,
   onDeleteItem,
 }: ShoppingQuickModalProps) {
+  const orderedSections = useMemo(
+    () => getOrderedSupermarketSections(supermarketSections),
+    [supermarketSections],
+  );
   const [label, setLabel] = useState('');
   const [qtyStr, setQtyStr] = useState('1');
   const [unit, setUnit] = useState<Unit>('un');
@@ -186,14 +190,17 @@ export function ShoppingQuickModal({
             <select
               id="shop-edit-section"
               value={section}
-              onChange={(e) => setSection(e.target.value as SupermarketSection)}
+              onChange={(e) => setSection(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
             >
-              {SUPERMARKET_SECTION_ORDER.map((s) => (
-                <option key={s} value={s}>
-                  {SUPERMARKET_SECTION_LABELS[s]}
+              {orderedSections.map((sec) => (
+                <option key={sec.id} value={sec.id}>
+                  {sec.name}
                 </option>
               ))}
+              {!orderedSections.some((sec) => sec.id === section) && (
+                <option value={section}>Outros</option>
+              )}
             </select>
           </div>
 

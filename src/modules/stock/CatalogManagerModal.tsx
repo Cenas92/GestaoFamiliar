@@ -1,21 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/Modal';
-import {
-  CATALOG_CATEGORY_LABELS,
-  SUPERMARKET_SECTION_LABELS,
-  UNITS,
-} from '../../constants/labels';
+import { CATALOG_CATEGORY_LABELS, UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
 import type {
   CatalogCategory,
   CatalogItem,
   StorageLocation,
   SupermarketSection,
+  SupermarketSectionConfig,
   TrackingMode,
   Unit,
 } from '../../types/domain';
 import { createSyncMetadata, nowIso } from '../../utils/id';
+import { getOrderedSupermarketSections } from '../../utils/sectionVisuals';
 import { normalizeText } from '../../utils/units';
 
 interface CatalogManagerModalProps {
@@ -23,6 +21,7 @@ interface CatalogManagerModalProps {
   onClose: () => void;
   catalogItems: CatalogItem[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   deviceId: string;
 }
 
@@ -31,8 +30,16 @@ export function CatalogManagerModal({
   onClose,
   catalogItems,
   locations,
+  supermarketSections,
   deviceId,
 }: CatalogManagerModalProps) {
+  const orderedSections = useMemo(
+    () => getOrderedSupermarketSections(supermarketSections),
+    [supermarketSections],
+  );
+  const defaultSectionId = orderedSections.some((s) => s.id === 'pantry')
+    ? 'pantry'
+    : (orderedSections[0]?.id ?? 'other');
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<CatalogItem | null>(null);
   const [creating, setCreating] = useState(false);
@@ -44,7 +51,7 @@ export function CatalogManagerModal({
   const [defaultUnit, setDefaultUnit] = useState<Unit>('un');
   const [defaultLocationId, setDefaultLocationId] = useState(locations[0]?.id ?? '');
   const [minStockQty, setMinStockQty] = useState('');
-  const [section, setSection] = useState<SupermarketSection>('pantry');
+  const [section, setSection] = useState<SupermarketSection>(defaultSectionId);
 
   const filtered = useMemo(() => {
     const q = normalizeText(search);
@@ -66,7 +73,7 @@ export function CatalogManagerModal({
     setDefaultUnit('un');
     setDefaultLocationId(locations[0]?.id ?? '');
     setMinStockQty('');
-    setSection('pantry');
+    setSection(defaultSectionId);
   };
 
   const startEdit = (item: CatalogItem) => {
@@ -247,13 +254,13 @@ export function CatalogManagerModal({
                 Secção supermercado
               </label>
               <select
-                value={section}
-                onChange={(e) => setSection(e.target.value as SupermarketSection)}
+                value={orderedSections.some((s) => s.id === section) ? section : defaultSectionId}
+                onChange={(e) => setSection(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
               >
-                {Object.entries(SUPERMARKET_SECTION_LABELS).map(([k, l]) => (
-                  <option key={k} value={k}>
-                    {l}
+                {orderedSections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
                   </option>
                 ))}
               </select>

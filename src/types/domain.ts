@@ -30,19 +30,49 @@ export type CatalogCategory =
   | 'pets'
   | 'pharmacy';
 
-export type SupermarketSection =
-  | 'produce'
-  | 'meat_fish'
-  | 'dairy'
-  | 'pantry'
-  | 'frozen'
-  | 'bakery'
-  | 'beverages'
-  | 'cleaning'
-  | 'hygiene_baby'
-  | 'pets'
-  | 'pharmacy'
-  | 'other';
+export type SupermarketSection = string;
+
+export type SectionColorToken =
+  | 'emerald'
+  | 'amber'
+  | 'rose'
+  | 'sky'
+  | 'orange'
+  | 'cyan'
+  | 'blue'
+  | 'teal'
+  | 'pink'
+  | 'yellow'
+  | 'red'
+  | 'violet'
+  | 'slate';
+
+export type SectionIconKey =
+  | 'apple'
+  | 'croissant'
+  | 'beef'
+  | 'fish'
+  | 'milk'
+  | 'wheat'
+  | 'carrot'
+  | 'cookie'
+  | 'snowflake'
+  | 'cup_soda'
+  | 'coffee'
+  | 'spray_can'
+  | 'sparkles'
+  | 'baby'
+  | 'paw_print'
+  | 'pill'
+  | 'shopping_basket'
+  | 'package';
+
+export interface SupermarketSectionConfig extends SyncMetadata {
+  name: string;
+  colorToken: SectionColorToken | string;
+  icon: SectionIconKey | string;
+  sortOrder: number;
+}
 
 export type RecipeCategory =
   | 'meat'

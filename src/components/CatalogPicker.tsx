@@ -1,25 +1,24 @@
 import { useMemo, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
-import {
-  CATALOG_CATEGORY_LABELS,
-  SUPERMARKET_SECTION_LABELS,
-  UNITS,
-} from '../constants/labels';
+import { CATALOG_CATEGORY_LABELS, UNITS } from '../constants/labels';
 import { db } from '../db/database';
 import type {
   CatalogCategory,
   CatalogItem,
   StorageLocation,
   SupermarketSection,
+  SupermarketSectionConfig,
   TrackingMode,
   Unit,
 } from '../types/domain';
 import { createSyncMetadata } from '../utils/id';
+import { getOrderedSupermarketSections } from '../utils/sectionVisuals';
 import { normalizeText } from '../utils/units';
 
 interface CatalogPickerProps {
   catalogItems: CatalogItem[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   deviceId: string;
   selectedId: string | null;
   onSelect: (item: CatalogItem) => void;
@@ -29,6 +28,7 @@ interface CatalogPickerProps {
 export function CatalogPicker({
   catalogItems,
   locations,
+  supermarketSections,
   deviceId,
   selectedId,
   onSelect,
@@ -39,11 +39,19 @@ export function CatalogPicker({
   const [focused, setFocused] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  const orderedSections = useMemo(
+    () => getOrderedSupermarketSections(supermarketSections),
+    [supermarketSections],
+  );
   const [newCategory, setNewCategory] = useState<CatalogCategory>('food');
   const [newTrackingMode, setNewTrackingMode] = useState<TrackingMode>('exact');
   const [newUnit, setNewUnit] = useState<Unit>('un');
   const [newLocationId, setNewLocationId] = useState(locations[0]?.id ?? '');
-  const [newSection, setNewSection] = useState<SupermarketSection>('pantry');
+  const [newSection, setNewSection] = useState<SupermarketSection>(() =>
+    orderedSections.some((s) => s.id === 'pantry')
+      ? 'pantry'
+      : (orderedSections[0]?.id ?? 'other'),
+  );
 
   const matches = useMemo(() => {
     const q = normalizeText(query);
@@ -188,12 +196,12 @@ export function CatalogPicker({
               </div>
               <select
                 value={newSection}
-                onChange={(e) => setNewSection(e.target.value as SupermarketSection)}
+                onChange={(e) => setNewSection(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
               >
-                {Object.entries(SUPERMARKET_SECTION_LABELS).map(([k, label]) => (
-                  <option key={k} value={k}>
-                    Corredor: {label}
+                {orderedSections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    Corredor: {sec.name}
                   </option>
                 ))}
               </select>

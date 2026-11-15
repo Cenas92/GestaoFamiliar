@@ -1,5 +1,9 @@
 import Dexie, { type Table } from 'dexie';
-import { buildStarterCatalog, buildStarterLocations } from '../data/starterCatalog';
+import {
+  buildStarterCatalog,
+  buildStarterLocations,
+  buildStarterSupermarketSections,
+} from '../data/starterCatalog';
 import type {
   AppSettings,
   AttachmentRecord,
@@ -10,11 +14,13 @@ import type {
   ShoppingItem,
   StockLot,
   StorageLocation,
+  SupermarketSectionConfig,
 } from '../types/domain';
 import { createId } from '../utils/id';
 
 export class FamilyDatabase extends Dexie {
   locations!: Table<StorageLocation, string>;
+  supermarketSections!: Table<SupermarketSectionConfig, string>;
   catalogItems!: Table<CatalogItem, string>;
   stockLots!: Table<StockLot, string>;
   recipes!: Table<Recipe, string>;
@@ -37,6 +43,18 @@ export class FamilyDatabase extends Dexie {
       attachments: 'id, updatedAt, deletedAt, uploadedToDrive',
       settings: 'id',
     });
+    this.version(2).stores({
+      locations: 'id, sortOrder, locationType, updatedAt, deletedAt',
+      supermarketSections: 'id, sortOrder, updatedAt, deletedAt',
+      catalogItems: 'id, name, category, defaultLocationId, supermarketSection, updatedAt, deletedAt',
+      stockLots: 'id, catalogItemId, locationId, expiresAt, frozenOrCookedAt, updatedAt, deletedAt',
+      recipes: 'id, title, category, updatedAt, deletedAt',
+      mealPlan: 'id, date, slot, recipeId, updatedAt, deletedAt',
+      shoppingItems: 'id, catalogItemId, section, checked, updatedAt, deletedAt',
+      members: 'id, role, updatedAt, deletedAt',
+      attachments: 'id, updatedAt, deletedAt, uploadedToDrive',
+      settings: 'id',
+    });
   }
 }
 
@@ -45,6 +63,12 @@ export const db = new FamilyDatabase();
 export async function ensureDatabaseSeeded(database: FamilyDatabase = db): Promise<AppSettings> {
   const existingSettings = await database.settings.get('singleton');
   if (existingSettings?.initialized) {
+    const sectionCount = await database.supermarketSections.count();
+    if (sectionCount === 0) {
+      await database.supermarketSections.bulkPut(
+        buildStarterSupermarketSections(existingSettings.deviceId),
+      );
+    }
     return existingSettings;
   }
 
@@ -64,13 +88,18 @@ export async function ensureDatabaseSeeded(database: FamilyDatabase = db): Promi
 
   await database.transaction(
     'rw',
-    [database.settings, database.locations, database.catalogItems],
+    [database.settings, database.locations, database.supermarketSections, database.catalogItems],
     async () => {
       await database.settings.put(initialSettings);
 
       const locCount = await database.locations.count();
       if (locCount === 0) {
         await database.locations.bulkPut(buildStarterLocations(deviceId));
+      }
+
+      const sectionCount = await database.supermarketSections.count();
+      if (sectionCount === 0) {
+        await database.supermarketSections.bulkPut(buildStarterSupermarketSections(deviceId));
       }
 
       const catCount = await database.catalogItems.count();

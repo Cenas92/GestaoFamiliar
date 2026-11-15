@@ -8,6 +8,7 @@ import type {
   QualitativeLevel,
   StockLot,
   StorageLocation,
+  SupermarketSectionConfig,
   Unit,
 } from '../../types/domain';
 import { nowIso as getNowIso } from '../../utils/id';
@@ -20,6 +21,7 @@ interface StockLotModalProps {
   editingLot: StockLot | null;
   catalogItems: CatalogItem[];
   locations: StorageLocation[];
+  supermarketSections?: SupermarketSectionConfig[];
   deviceId: string;
   initialLocationId?: string;
 }
@@ -30,6 +32,7 @@ export function StockLotModal({
   editingLot,
   catalogItems,
   locations,
+  supermarketSections,
   deviceId,
   initialLocationId,
 }: StockLotModalProps) {
@@ -181,6 +184,7 @@ export function StockLotModal({
             key={editingLot?.id ?? 'new'}
             catalogItems={catalogItems}
             locations={locations}
+            supermarketSections={supermarketSections}
             deviceId={deviceId}
             selectedId={catalogItemId}
             onSelect={handleSelectCatalog}

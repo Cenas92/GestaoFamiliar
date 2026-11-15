@@ -11,12 +11,14 @@ import type {
   ShoppingItem,
   StockLot,
   StorageLocation,
+  SupermarketSectionConfig,
 } from '../types/domain';
 
 export interface FamilyDataState {
   ready: boolean;
   settings: AppSettings | undefined;
   locations: StorageLocation[];
+  supermarketSections: SupermarketSectionConfig[];
   catalogItems: CatalogItem[];
   stockLots: StockLot[];
   recipes: Recipe[];
@@ -48,6 +50,17 @@ export function useFamilyData(): FamilyDataState {
     },
     [],
     [] as StorageLocation[],
+  );
+
+  const supermarketSections = useLiveQuery(
+    async () => {
+      const all = await db.supermarketSections.toArray();
+      return all
+        .filter((s) => !s.deletedAt)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'pt-PT'));
+    },
+    [],
+    [] as SupermarketSectionConfig[],
   );
 
   const catalogItems = useLiveQuery(
@@ -123,6 +136,7 @@ export function useFamilyData(): FamilyDataState {
     ready: seeded && settings !== undefined,
     settings,
     locations,
+    supermarketSections,
     catalogItems,
     stockLots,
     recipes,
