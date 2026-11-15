@@ -502,41 +502,62 @@ export function SettingsView({
         </div>
 
         {showGuide && (
-          <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/70 p-3.5 text-xs text-teal-950">
-            <p className="font-bold">Guia rápido (100% gratuito, sem servidores terceiros):</p>
-            <ol className="list-decimal space-y-1 pl-4">
+          <div className="space-y-3 rounded-xl border border-teal-200 bg-teal-50/70 p-3.5 text-xs text-teal-950">
+            <p className="font-bold">
+              Configurar Sincronização Google Drive (Casal / Multi-dispositivo)
+            </p>
+
+            <ol className="list-decimal space-y-1.5 pl-4">
               <li>
-                Acede a <strong>console.cloud.google.com</strong> e seleciona ou cria um projeto.
+                Acede a <strong>console.cloud.google.com</strong> e seleciona ou cria um projeto
+                gratuito.
               </li>
               <li>
-                Ativa <strong>Google Drive API</strong> e <strong>Google Picker API</strong> (pesquisa
-                na barra de topo).
+                Na pesquisa de topo, ativa <strong>Google Drive API</strong> (e{' '}
+                <strong>Google Picker API</strong> se usares 2 contas Gmail diferentes).
               </li>
               <li>
-                Em <strong>Google Auth Platform → Vamos começar</strong>, escolhe{' '}
-                <em>Externo</em>; depois em <strong>Público-alvo → Utilizadores de teste</strong>,
-                adiciona os 2 emails Gmail (teu e da tua mulher).
+                No menu <strong>Google Auth Platform → Visão geral → Vamos começar</strong> (ou{' '}
+                <em>Branding</em> e <em>Público-alvo</em>): escolhe <em>Externo</em> e, em{' '}
+                <strong>Público-alvo → Utilizadores de teste</strong>, adiciona os emails Gmail que
+                vão usar a app (o teu e o do cônjuge).
               </li>
               <li>
-                Em <strong>Clientes → Criar cliente</strong> (<em>Aplicativo da Web</em>), adiciona
-                em <em>Origens JavaScript autorizadas</em>:{' '}
-                <code className="rounded bg-white px-1 py-0.5">{window.location.origin}</code>
+                Em <strong>Google Auth Platform → Clientes → Criar cliente</strong> (
+                <em>Aplicativo da Web</em>), adiciona em <em>Origens JavaScript autorizadas</em> e{' '}
+                <em>URIs de redirecionamento autorizados</em> exatamente:{' '}
+                <code className="rounded bg-white px-1 py-0.5">{window.location.origin}</code>{' '}
+                (<strong>sem</strong> <code>/GestaoFamiliar/</code> nem barra final).
               </li>
               <li>
-                Em <strong>APIs e serviços → Credenciais</strong>, cria também uma{' '}
-                <strong>Chave de API</strong> (necessária apenas para o Picker no 2.º telemóvel).
+                Copia o <strong>ID do cliente</strong> (termina em{' '}
+                <code>.apps.googleusercontent.com</code>, <strong>sem</strong>{' '}
+                <code>https://</code> nem espaços) e cola-o abaixo → <em>Guardar definições</em>.
               </li>
               <li>
-                <strong>No 1.º dispositivo:</strong> cola o ID do cliente (sem{' '}
-                <code>https://</code> nem espaços) e clica em{' '}
-                <em>Criar / Ligar pasta GestaoFamiliar</em>. Depois partilha essa pasta no Google
-                Drive com a tua mulher (como <em>Editor</em>).
+                <strong>1.º dispositivo:</strong> clica em{' '}
+                <em>Criar / Ligar pasta GestaoFamiliar</em> e depois em <em>Sincronizar agora</em>.
               </li>
               <li>
-                <strong>No 2.º dispositivo:</strong> cola o mesmo Client ID (+ API Key) e clica em{' '}
-                <em>Escolher pasta partilhada (Picker)</em>.
+                <strong>2.º dispositivo (mesma conta Google, ex.: PC + telemóvel):</strong> cola o
+                mesmo <em>ID do cliente</em>, guarda e clica em{' '}
+                <em>Criar / Ligar pasta GestaoFamiliar</em> (liga logo à mesma pasta) ou fixa o{' '}
+                <em>ID da Pasta Drive</em>.
+              </li>
+              <li>
+                <strong>2.º dispositivo (conta diferente / Casal):</strong> partilha a pasta{' '}
+                <code>GestaoFamiliar</code> no Google Drive com o outro Gmail como{' '}
+                <em>Editor</em>, cria uma <strong>Chave de API</strong> em{' '}
+                <em>APIs e serviços → Credenciais</em>, cola-a em <em>Google API Key</em> no 2.º
+                telemóvel e clica em <em>Escolher pasta partilhada (Picker)</em>.
               </li>
             </ol>
+
+            <p className="rounded-lg bg-white/80 px-2.5 py-1.5 text-[11px] text-teal-900">
+              <strong>Dica:</strong> depois de ligado, a app sincroniza automaticamente ~3,5 s após
+              editar, ao abrir ou ao voltar à internet. No telemóvel também podes{' '}
+              <strong>arrastar o ecrã para baixo</strong> no topo para atualizar.
+            </p>
           </div>
         )}
 
