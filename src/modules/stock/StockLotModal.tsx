@@ -75,6 +75,8 @@ export function StockLotModal({
 
   const selectedCatalog = catalogItems.find((c) => c.id === catalogItemId) ?? null;
   const selectedLocation = locations.find((l) => l.id === locationId) ?? null;
+  const isFreezerLocation = selectedLocation?.locationType === 'freezer';
+  const showSecondaryDate = isLeftover || isFreezerLocation;
 
   const handleSelectCatalog = (item: CatalogItem) => {
     setCatalogItemId(item.id);
@@ -94,8 +96,12 @@ export function StockLotModal({
   const handleLocationChange = (newLocId: string) => {
     setLocationId(newLocId);
     const loc = locations.find((l) => l.id === newLocId);
-    if (loc?.locationType === 'freezer' && !frozenOrCookedAt) {
-      setFrozenOrCookedAt(todayDateString());
+    if (loc?.locationType === 'freezer') {
+      if (!frozenOrCookedAt) {
+        setFrozenOrCookedAt(todayDateString());
+      }
+    } else if (!isLeftover) {
+      setFrozenOrCookedAt('');
     }
   };
 
@@ -118,6 +124,7 @@ export function StockLotModal({
     }
 
     const finalLabel = productLabel.trim() || selectedCatalog.name;
+    const effectiveSecondaryDate = showSecondaryDate && frozenOrCookedAt ? frozenOrCookedAt : null;
 
     if (editingLot) {
       const updated: StockLot = {
@@ -129,7 +136,7 @@ export function StockLotModal({
         unit: isQualitative ? null : unit,
         qualitativeLevel: isQualitative ? qualitativeLevel : null,
         expiresAt: expiresAt || null,
-        frozenOrCookedAt: frozenOrCookedAt || null,
+        frozenOrCookedAt: effectiveSecondaryDate,
         isLeftover,
         notes: notes.trim(),
         updatedAt: getNowIso(),
@@ -146,7 +153,7 @@ export function StockLotModal({
           unit: isQualitative ? null : unit,
           qualitativeLevel: isQualitative ? qualitativeLevel : null,
           expiresAt: expiresAt || null,
-          frozenOrCookedAt: frozenOrCookedAt || null,
+          frozenOrCookedAt: effectiveSecondaryDate,
           isLeftover,
           notes: notes.trim(),
         },
@@ -268,12 +275,16 @@ export function StockLotModal({
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={isFreezerLocation ? 'grid gap-3 sm:grid-cols-2' : ''}>
           <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <label
+              htmlFor="stock-expires-at"
+              className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
               Data de validade (opcional)
             </label>
             <input
+              id="stock-expires-at"
               type="date"
               value={expiresAt}
               onChange={(e) => setExpiresAt(e.target.value)}
@@ -281,35 +292,62 @@ export function StockLotModal({
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {selectedLocation?.locationType === 'freezer'
-                ? 'Data em que foi congelado'
-                : 'Data de preparação / sobras'}
-            </label>
-            <input
-              type="date"
-              value={frozenOrCookedAt}
-              onChange={(e) => setFrozenOrCookedAt(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-600"
-            />
-          </div>
+          {isFreezerLocation && (
+            <div>
+              <label
+                htmlFor="stock-frozen-at"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                {isLeftover ? 'Data de congelação / sobras' : 'Data em que foi congelado'}
+              </label>
+              <input
+                id="stock-frozen-at"
+                type="date"
+                value={frozenOrCookedAt}
+                onChange={(e) => setFrozenOrCookedAt(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-600"
+              />
+            </div>
+          )}
         </div>
 
-        <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={isLeftover}
-            onChange={(e) => {
-              setIsLeftover(e.target.checked);
-              if (e.target.checked && !frozenOrCookedAt) {
-                setFrozenOrCookedAt(todayDateString());
-              }
-            }}
-            className="h-4 w-4 rounded accent-teal-700"
-          />
-          Marcar como sobra / refeição caseira (tupperware)
-        </label>
+        <div className="space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <label className="flex items-center gap-2.5 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={isLeftover}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setIsLeftover(checked);
+                if (checked && !frozenOrCookedAt) {
+                  setFrozenOrCookedAt(todayDateString());
+                } else if (!checked && !isFreezerLocation) {
+                  setFrozenOrCookedAt('');
+                }
+              }}
+              className="h-4 w-4 rounded accent-teal-700"
+            />
+            Marcar como sobra / refeição caseira (tupperware)
+          </label>
+
+          {isLeftover && !isFreezerLocation && (
+            <div>
+              <label
+                htmlFor="stock-cooked-at"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                Data de preparação / sobras
+              </label>
+              <input
+                id="stock-cooked-at"
+                type="date"
+                value={frozenOrCookedAt}
+                onChange={(e) => setFrozenOrCookedAt(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-600"
+              />
+            </div>
+          )}
+        </div>
 
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
