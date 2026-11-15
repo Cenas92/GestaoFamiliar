@@ -27,9 +27,9 @@ export function CollectionToolbar<TSort extends string>({
   onToggleGroup,
 }: CollectionToolbarProps<TSort>) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
       <div
-        className="inline-flex items-center gap-0.5 rounded-xl bg-slate-200/70 p-0.5"
+        className="inline-flex items-center gap-0.5 rounded-xl bg-slate-100 p-0.5"
         role="group"
         aria-label="Modo de visualização"
       >
@@ -64,7 +64,7 @@ export function CollectionToolbar<TSort extends string>({
             value={sortMode}
             onChange={(e) => onChangeSortMode(e.target.value as TSort)}
             aria-label={sortAriaLabel}
-            className="rounded-lg border border-slate-200 bg-white py-1 pl-6 pr-2 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            className="rounded-lg border border-slate-200 bg-slate-50 py-1 pl-6 pr-2 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -82,7 +82,7 @@ export function CollectionToolbar<TSort extends string>({
           className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition ${
             groupActive
               ? 'border-teal-300 bg-teal-50 text-teal-900'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
           }`}
         >
           <FolderTree className="h-3.5 w-3.5" aria-hidden="true" />

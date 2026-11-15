@@ -9,6 +9,7 @@ describe('App integration', () => {
     await waitFor(() => {
       expect(screen.getByText('Hoje em Casa')).toBeInTheDocument();
     });
+    expect(screen.queryByText(/Casa, Stock & Receitas/i)).not.toBeInTheDocument();
 
     const stockButtons = screen.getAllByRole('button', { name: /^Stock$/i });
     fireEvent.click(stockButtons[0]);

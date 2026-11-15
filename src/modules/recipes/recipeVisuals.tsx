@@ -26,7 +26,7 @@ export type RecipeSortMode = 'compatibility' | 'time' | 'name' | 'cooked';
 export type RecipeViewPreferences = CollectionViewPreferences<RecipeSortMode>;
 
 const DEFAULT_RECIPE_PREFS: RecipeViewPreferences = {
-  viewMode: 'medium',
+  viewMode: 'line',
   sortMode: 'compatibility',
   groupEnabled: false,
 };

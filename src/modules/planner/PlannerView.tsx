@@ -3,6 +3,7 @@ import {
   Calendar,
   CheckCircle2,
   ChefHat,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -61,6 +62,7 @@ export function PlannerView({
   deviceId,
 }: PlannerViewProps) {
   const [weekStart, setWeekStart] = useState(() => getWeekStartMonday());
+  const [expandedEmptyDays, setExpandedEmptyDays] = useState<Set<string>>(() => new Set());
   const [addingTarget, setAddingTarget] = useState<{ date: string; slot: MealSlot } | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('');
   const [plannedServings, setPlannedServings] = useState('4');
@@ -178,12 +180,27 @@ export function PlannerView({
     setTimeout(() => setToast(null), 3000);
   };
 
+  const toggleEmptyDay = (dayStr: string) => {
+    setExpandedEmptyDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(dayStr)) {
+        next.delete(dayStr);
+      } else {
+        next.add(dayStr);
+      }
+      return next;
+    });
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Ementa Semanal</h1>
-          <p className="text-xs text-slate-500">
+    <div className="space-y-2.5">
+      {/* Compact single-row header */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold leading-tight text-slate-900 sm:text-xl">
+            Ementa Semanal
+          </h1>
+          <p className="truncate text-[11px] text-slate-500">
             {formatDatePt(weekDays[0])} a {formatDatePt(weekDays[6])}
           </p>
         </div>
@@ -191,22 +208,22 @@ export function PlannerView({
         <button
           type="button"
           onClick={() => setNeedsModalOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-teal-800"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-teal-800"
         >
-          <ShoppingCart className="h-4 w-4" />
-          Enviar o que falta ({missingNeeds.length})
+          <ShoppingCart className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>Em falta ({missingNeeds.length})</span>
         </button>
       </div>
 
       {/* Week switcher */}
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2">
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-2.5 py-1.5">
         <button
           type="button"
           onClick={() => setWeekStart(addDaysToDateString(weekStart, -7))}
           className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
           aria-label="Semana anterior"
         >
-          <ChevronLeft className="h-5 w-5" />
+          <ChevronLeft className="h-4 w-4" />
         </button>
         <button
           type="button"
@@ -222,31 +239,74 @@ export function PlannerView({
           className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
           aria-label="Próxima semana"
         >
-          <ChevronRight className="h-5 w-5" />
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 
       {toast && (
-        <div className="rounded-xl bg-teal-900 px-3.5 py-2 text-xs font-medium text-white">
+        <div className="rounded-xl bg-teal-900 px-3 py-1.5 text-xs font-medium text-white shadow">
           {toast}
         </div>
       )}
 
-      {/* Days cards */}
-      <div className="space-y-3">
+      {/* Days list (empty non-today days collapse to compact 1-line rows) */}
+      <div className="space-y-2">
         {weekDays.map((dayStr) => {
           const isToday = dayStr === today;
           const dayEntries = weekEntries.filter((e) => e.date === dayStr);
+          const isExpanded = isToday || dayEntries.length > 0 || expandedEmptyDays.has(dayStr);
+
+          if (!isExpanded) {
+            return (
+              <div
+                key={dayStr}
+                className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-2xs"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleEmptyDay(dayStr)}
+                  aria-expanded="false"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                  <span className="truncate text-sm font-semibold text-slate-800">
+                    {formatWeekdayShortPt(dayStr)}, {formatDatePt(dayStr)}
+                  </span>
+                  <span className="text-[11px] text-slate-400">· Livre</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openSlotModal(dayStr, 'dinner')}
+                  aria-label={`Planear ${formatWeekdayShortPt(dayStr)}, ${formatDatePt(dayStr)}`}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-teal-800 hover:border-teal-300 hover:bg-teal-50"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  Planear
+                </button>
+              </div>
+            );
+          }
 
           return (
             <div
               key={dayStr}
-              className={`rounded-2xl border bg-white p-3.5 shadow-xs ${
+              className={`rounded-2xl border bg-white p-3 shadow-xs ${
                 isToday ? 'border-teal-500 ring-1 ring-teal-500/20' : 'border-slate-200'
               }`}
             >
-              <div className="mb-2.5 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
+                  {!isToday && dayEntries.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleEmptyDay(dayStr)}
+                      aria-expanded="true"
+                      aria-label={`Recolher ${formatWeekdayShortPt(dayStr)}, ${formatDatePt(dayStr)}`}
+                      className="rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    >
+                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
                   <span className="text-sm font-bold text-slate-900">
                     {formatWeekdayShortPt(dayStr)}, {formatDatePt(dayStr)}
                   </span>
@@ -264,32 +324,25 @@ export function PlannerView({
                   return (
                     <div
                       key={slot}
-                      className="flex flex-col justify-between rounded-xl border border-slate-100 bg-slate-50/80 p-2.5"
+                      className="flex flex-col justify-between rounded-xl bg-slate-50/80 p-2.5"
                     >
-                      <div className="mb-1.5 flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-1">
                         <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                           {MEAL_SLOT_LABELS[slot]}
                         </span>
                         <button
                           type="button"
                           onClick={() => openSlotModal(dayStr, slot)}
-                          className="rounded-md p-1 text-teal-700 hover:bg-teal-100"
+                          className="inline-flex items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100"
                           title={`Planear ${MEAL_SLOT_LABELS[slot]}`}
                         >
-                          <Plus className="h-3.5 w-3.5" />
+                          <Plus className="h-3 w-3" aria-hidden="true" />
+                          {slotEntries.length === 0 && <span>Planear</span>}
                         </button>
                       </div>
 
-                      {slotEntries.length === 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => openSlotModal(dayStr, slot)}
-                          className="rounded-lg border border-dashed border-slate-200 py-2 text-xs text-slate-400 hover:border-teal-300 hover:text-teal-700"
-                        >
-                          + Planear
-                        </button>
-                      ) : (
-                        <div className="space-y-1.5">
+                      {slotEntries.length > 0 && (
+                        <div className="mt-1.5 space-y-1.5">
                           {slotEntries.map((entry) => {
                             const recipe = entry.recipeId
                               ? recipesById.get(entry.recipeId)
@@ -305,7 +358,7 @@ export function PlannerView({
                               >
                                 <div className="flex items-start justify-between gap-1">
                                   <div className="min-w-0">
-                                    <p className="font-semibold truncate">
+                                    <p className="truncate font-semibold">
                                       {recipe ? recipe.title : entry.customLabel}
                                     </p>
                                     {recipe && (
@@ -317,6 +370,7 @@ export function PlannerView({
                                   <button
                                     type="button"
                                     onClick={() => deleteEntry(entry)}
+                                    aria-label={`Remover ${recipe ? recipe.title : entry.customLabel}`}
                                     className="text-slate-400 hover:text-rose-600"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -359,11 +413,35 @@ export function PlannerView({
         onClose={() => setAddingTarget(null)}
         title={
           addingTarget
-            ? `Planear ${MEAL_SLOT_LABELS[addingTarget.slot]} (${formatDatePt(addingTarget.date)})`
+            ? `Planear refeição (${formatDatePt(addingTarget.date)})`
             : 'Planear refeição'
         }
       >
         <form onSubmit={handleSaveEntry} className="space-y-4">
+          {addingTarget && (
+            <div>
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Refeição</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {SLOTS.map((slot) => {
+                  const active = addingTarget.slot === slot;
+                  return (
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() => setAddingTarget({ ...addingTarget, slot })}
+                      className={`rounded-xl border px-2 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? 'border-teal-700 bg-teal-700 text-white'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {MEAL_SLOT_LABELS[slot]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {recipes.length > 0 && (
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">

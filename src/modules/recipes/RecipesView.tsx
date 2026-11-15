@@ -50,8 +50,6 @@ interface RecipesViewProps {
   shoppingItems: ShoppingItem[];
   expiryWarningDays: number;
   deviceId: string;
-  openCreateInitially?: boolean;
-  onConsumeCreateInitial?: () => void;
 }
 
 type MatchFilter = 'all' | 'ready' | 'almost' | 'expiring';
@@ -374,8 +372,6 @@ export function RecipesView({
   shoppingItems,
   expiryWarningDays,
   deviceId,
-  openCreateInitially,
-  onConsumeCreateInitial,
 }: RecipesViewProps) {
   const [search, setSearch] = useState('');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('all');
@@ -391,15 +387,10 @@ export function RecipesView({
     () => new Set(),
   );
 
-  const [formOpen, setFormOpen] = useState(Boolean(openCreateInitially));
+  const [formOpen, setFormOpen] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [detailRecipeId, setDetailRecipeId] = useState<string | null>(null);
   const [cookState, setCookState] = useState<{ recipe: Recipe; servings: number } | null>(null);
-
-  if (openCreateInitially && !formOpen) {
-    setFormOpen(true);
-    onConsumeCreateInitial?.();
-  }
 
   const updatePrefs = (patch: Partial<RecipeViewPreferences>) => {
     setPrefs((prev) => {
@@ -596,9 +587,11 @@ export function RecipesView({
         </button>
       </div>
 
-      {/* Horizontal match status pills (no scrollbar) */}
+      {/* Horizontal match status pills (no scrollbar, omits 0-count secondary pills) */}
       <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-        {MATCH_FILTER_OPTIONS.map(([key, label]) => (
+        {MATCH_FILTER_OPTIONS.filter(
+          ([key]) => key === 'all' || matchCounts[key] > 0 || matchFilter === key,
+        ).map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -614,7 +607,7 @@ export function RecipesView({
         ))}
       </div>
 
-      {/* Search + Collapsible Filters toggle */}
+      {/* Search + Collapsible Filters & View toggle */}
       <div className="flex items-center gap-1.5">
         <div className="relative min-w-0 flex-1">
           <Search
@@ -651,7 +644,7 @@ export function RecipesView({
           }`}
         >
           <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>Filtros</span>
+          <span>Filtros e vista</span>
           {activeFiltersCount > 0 && (
             <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-teal-700 px-1 text-[10px] font-bold text-white">
               {activeFiltersCount}
@@ -699,65 +692,66 @@ export function RecipesView({
         </div>
       )}
 
-      {/* Collapsible Filters panel (open by default on PC, collapsed on mobile) */}
+      {/* Collapsible Filters & View options panel (open on PC, collapsed on mobile) */}
       {filtersOpen && (
-        <div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xs sm:grid-cols-3">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value as RecipeCategory | 'all')}
-            aria-label="Filtrar por categoria"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
-          >
-            <option value="all">Categoria: Todas</option>
-            {Object.entries(RECIPE_CATEGORY_LABELS).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-xs">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as RecipeCategory | 'all')}
+              aria-label="Filtrar por categoria"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            >
+              <option value="all">Categoria: Todas</option>
+              {Object.entries(RECIPE_CATEGORY_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={maxMinutes}
-            onChange={(e) => setMaxMinutes(Number(e.target.value))}
-            aria-label="Filtrar por tempo"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
-          >
-            <option value={0}>Tempo: Qualquer</option>
-            <option value={20}>Rápida (≤ 20 min)</option>
-            <option value={35}>≤ 35 min</option>
-            <option value={60}>≤ 60 min</option>
-          </select>
+            <select
+              value={maxMinutes}
+              onChange={(e) => setMaxMinutes(Number(e.target.value))}
+              aria-label="Filtrar por tempo"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            >
+              <option value={0}>Tempo: Qualquer</option>
+              <option value={20}>Rápida (≤ 20 min)</option>
+              <option value={35}>≤ 35 min</option>
+              <option value={60}>≤ 60 min</option>
+            </select>
 
-          <select
-            value={memberFilter}
-            onChange={(e) => setMemberFilter(e.target.value)}
-            aria-label="Filtrar por pessoa"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
-          >
-            <option value="all">Para quem: Todos</option>
-            <option value="safe_all">Sem alergias da família</option>
-            <option value="kids">Adequada a crianças</option>
-            {humanMembers.map((m) => (
-              <option key={m.id} value={m.id}>
-                Favoritas de {m.name}
-              </option>
-            ))}
-          </select>
+            <select
+              value={memberFilter}
+              onChange={(e) => setMemberFilter(e.target.value)}
+              aria-label="Filtrar por pessoa"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            >
+              <option value="all">Para quem: Todos</option>
+              <option value="safe_all">Sem alergias da família</option>
+              <option value="kids">Adequada a crianças</option>
+              {humanMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  Favoritas de {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <CollectionToolbar
+            viewMode={prefs.viewMode}
+            onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
+            sortMode={prefs.sortMode}
+            sortOptions={RECIPE_SORT_OPTIONS}
+            sortAriaLabel="Ordenar receitas"
+            onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
+            groupActive={prefs.groupEnabled}
+            groupTitle="Agrupar por categoria"
+            onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
+          />
         </div>
       )}
-
-      {/* Thin single-row View Mode + Sort + Group toolbar */}
-      <CollectionToolbar
-        viewMode={prefs.viewMode}
-        onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
-        sortMode={prefs.sortMode}
-        sortOptions={RECIPE_SORT_OPTIONS}
-        sortAriaLabel="Ordenar receitas"
-        onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
-        groupActive={prefs.groupEnabled}
-        groupTitle="Agrupar por categoria"
-        onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
-      />
 
       {/* Recipes Collection */}
       {evaluated.length === 0 ? (

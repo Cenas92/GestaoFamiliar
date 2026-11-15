@@ -158,7 +158,7 @@ describe('StockView view modes, symbols, sorting and grouping', () => {
     vi.restoreAllMocks();
   });
 
-  it('defaults to Cartões padrão, switches to Cartões detalhados and persists view mode in localStorage', () => {
+  it('defaults to Lista compacta em linha, switches to Cartões detalhados and persists view mode in localStorage', () => {
     render(
       <StockView
         locations={LOCATIONS}
@@ -171,9 +171,12 @@ describe('StockView view modes, symbols, sorting and grouping', () => {
       />,
     );
 
-    const mediumBtn = screen.getByRole('button', { name: 'Cartões padrão' });
+    expect(screen.getByText('3 produtos em casa')).toBeInTheDocument();
+    expect(screen.queryByText(/abaixo do mín\./i)).not.toBeInTheDocument();
+
+    const lineBtn = screen.getByRole('button', { name: 'Lista compacta em linha' });
     const detailedBtn = screen.getByRole('button', { name: 'Cartões detalhados' });
-    expect(mediumBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(lineBtn).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByText('Genérico: Leite Meio-Gordo')).not.toBeInTheDocument();
     expect(screen.queryByText('Receita: Arroz de Pato')).not.toBeInTheDocument();
 
@@ -333,10 +336,17 @@ describe('StockView view modes, symbols, sorting and grouping', () => {
       expect(screen.queryByRole('button', { name: /Congelador/i })).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Frigorífico \(2\)/i })).toBeInTheDocument();
 
-      // Filters start collapsed on mobile (< 640px)
-      const filtersBtn = screen.getByRole('button', { name: /Filtros/i });
+      // Filters and view controls start collapsed on mobile (< 640px)
+      const filtersBtn = screen.getByRole('button', { name: /Filtros e vista/i });
       expect(filtersBtn).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByLabelText('Filtrar por categoria')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Lista compacta em linha' })).not.toBeInTheDocument();
+
+      // Overflow menu exposes Catálogo without cluttering main header
+      fireEvent.click(screen.getByRole('button', { name: 'Mais opções do stock' }));
+      fireEvent.click(screen.getByRole('button', { name: /Catálogo de produtos/i }));
+      expect(screen.getByRole('dialog', { name: /Catálogo/i })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Fechar' }));
 
       // Expand filters, select a category, then collapse and clear via chip
       fireEvent.click(filtersBtn);

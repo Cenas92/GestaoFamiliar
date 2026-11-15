@@ -95,9 +95,9 @@ describe('ShoppingView compact layout, 4 view modes, quick edit modal and collap
       />,
     );
 
-    const mediumBtn = screen.getByRole('button', { name: 'Cartões padrão' });
+    const lineBtn = screen.getByRole('button', { name: 'Lista compacta em linha' });
     const detailedBtn = screen.getByRole('button', { name: 'Cartões detalhados' });
-    expect(mediumBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(lineBtn).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByText('Origem: Receita')).not.toBeInTheDocument();
 
     fireEvent.click(detailedBtn);
@@ -198,9 +198,10 @@ describe('ShoppingView compact layout, 4 view modes, quick edit modal and collap
       expect(addToggle).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByText('Adicionar à lista')).not.toBeInTheDocument();
 
-      // Filters start collapsed on mobile
-      const filtersBtn = screen.getByRole('button', { name: /Filtros/i });
+      // Filters and view controls start collapsed on mobile
+      const filtersBtn = screen.getByRole('button', { name: /Filtros e vista/i });
       expect(filtersBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('button', { name: 'Grelha em quadrados' })).not.toBeInTheDocument();
       fireEvent.click(filtersBtn);
       fireEvent.change(screen.getByLabelText('Filtrar por secção'), {
         target: { value: 'produce' },

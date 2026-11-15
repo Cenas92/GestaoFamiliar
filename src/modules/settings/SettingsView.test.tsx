@@ -144,5 +144,10 @@ describe('SettingsView household member editing', () => {
     fireEvent.click(aboutToggle);
     expect(aboutToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('AI-Cenas92')).not.toBeInTheDocument();
+
+    // Catalog section opens CatalogManagerModal
+    fireEvent.click(screen.getByRole('button', { name: /Catálogo de Produtos Base/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Gerir catálogo de produtos/i }));
+    expect(screen.getByRole('dialog', { name: /Catálogo/i })).toBeInTheDocument();
   });
 });

@@ -763,7 +763,9 @@ export function ShoppingView({
             Lista de Compras
           </h1>
           <p className="truncate text-[11px] text-slate-500">
-            {uncheckedCount} por comprar · {checkedItems.length} no carrinho
+            {checkedItems.length > 0
+              ? `${uncheckedCount} por comprar · ${checkedItems.length} no carrinho`
+              : `${uncheckedCount} ${uncheckedCount === 1 ? 'item por comprar' : 'itens por comprar'}`}
           </p>
         </div>
 
@@ -846,7 +848,7 @@ export function ShoppingView({
             className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
           >
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-            Importar stock baixo ({lowStockMissing.length})
+            Repor em falta ({lowStockMissing.length})
           </button>
         )}
       </div>
@@ -991,7 +993,7 @@ export function ShoppingView({
           }`}
         >
           <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>Filtros</span>
+          <span>Filtros e vista</span>
           {activeFiltersCount > 0 && (
             <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-teal-700 px-1 text-[10px] font-bold text-white">
               {activeFiltersCount}
@@ -1028,51 +1030,52 @@ export function ShoppingView({
         </div>
       )}
 
-      {/* Collapsible Filters panel (open by default on PC, collapsed on mobile) */}
+      {/* Collapsible Filters & View options panel (open on PC, collapsed on mobile) */}
       {filtersOpen && (
-        <div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xs sm:grid-cols-2">
-          <select
-            value={sectionFilter}
-            onChange={(e) => setSectionFilter(e.target.value as SupermarketSection | 'all')}
-            aria-label="Filtrar por secção"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
-          >
-            <option value="all">Secção: Todas</option>
-            {availableSections.map((s) => (
-              <option key={s} value={s}>
-                {SUPERMARKET_SECTION_LABELS[s]}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-xs">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <select
+              value={sectionFilter}
+              onChange={(e) => setSectionFilter(e.target.value as SupermarketSection | 'all')}
+              aria-label="Filtrar por secção"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            >
+              <option value="all">Secção: Todas</option>
+              {availableSections.map((s) => (
+                <option key={s} value={s}>
+                  {SUPERMARKET_SECTION_LABELS[s]}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value as ShoppingItem['source'] | 'all')}
-            aria-label="Filtrar por origem"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
-          >
-            <option value="all">Origem: Todas</option>
-            {availableSources.map((src) => (
-              <option key={src} value={src}>
-                {SHOPPING_SOURCE_LABELS[src]}
-              </option>
-            ))}
-          </select>
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as ShoppingItem['source'] | 'all')}
+              aria-label="Filtrar por origem"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            >
+              <option value="all">Origem: Todas</option>
+              {availableSources.map((src) => (
+                <option key={src} value={src}>
+                  {SHOPPING_SOURCE_LABELS[src]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <CollectionToolbar
+            viewMode={prefs.viewMode}
+            onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
+            sortMode={prefs.sortMode}
+            sortOptions={SHOPPING_SORT_OPTIONS}
+            sortAriaLabel="Ordenar compras"
+            onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
+            groupActive={prefs.groupEnabled}
+            groupTitle="Agrupar por secção de supermercado"
+            onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
+          />
         </div>
       )}
-
-      {/* Thin single-row View Mode + Sort + Group toolbar */}
-      <CollectionToolbar
-        viewMode={prefs.viewMode}
-        onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
-        sortMode={prefs.sortMode}
-        sortOptions={SHOPPING_SORT_OPTIONS}
-        sortAriaLabel="Ordenar compras"
-        onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
-        groupActive={prefs.groupEnabled}
-        groupTitle="Agrupar por secção de supermercado"
-        onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
-      />
 
       {/* Shopping list / sections */}
       {shoppingItems.length === 0 ? (
@@ -1080,7 +1083,7 @@ export function ShoppingView({
           <ShoppingBag className="mx-auto h-9 w-9 text-slate-300" />
           <p className="mt-2 text-sm font-semibold text-slate-700">Lista de compras vazia.</p>
           <p className="mt-1 text-xs text-slate-500">
-            Toca em "Adicionar" para registar produtos, importa do stock baixo ou envia da ementa semanal.
+            Toca em "Adicionar" para registar produtos ou envia ingredientes da ementa.
           </p>
         </div>
       ) : filteredMetas.length === 0 ? (
@@ -1114,7 +1117,7 @@ export function ShoppingView({
                     </span>
                     <span className="text-sm font-bold text-slate-900">{group.label}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                      {remaining} por comprar · {group.items.length}
+                      {remaining > 0 ? `${remaining} por comprar` : `${group.items.length} feito`}
                     </span>
                   </span>
                   {collapsed ? (

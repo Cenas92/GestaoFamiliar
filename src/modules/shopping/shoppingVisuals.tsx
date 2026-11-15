@@ -11,7 +11,7 @@ export type ShoppingSortMode = 'section' | 'unchecked_first' | 'name';
 export type ShoppingViewPreferences = CollectionViewPreferences<ShoppingSortMode>;
 
 const DEFAULT_SHOPPING_PREFS: ShoppingViewPreferences = {
-  viewMode: 'medium',
+  viewMode: 'line',
   sortMode: 'section',
   groupEnabled: true,
 };

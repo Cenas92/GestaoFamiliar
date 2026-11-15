@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  MoreHorizontal,
   Pencil,
   Plus,
   Search,
@@ -69,13 +70,6 @@ interface StockViewProps {
 }
 
 type StatusFilter = 'all' | 'expiring' | 'low' | 'leftovers';
-
-const STATUS_FILTER_OPTIONS: [StatusFilter, string][] = [
-  ['all', 'Todos'],
-  ['expiring', 'A expirar / Expirados'],
-  ['low', 'Stock baixo'],
-  ['leftovers', 'Sobras / Congelados'],
-];
 
 const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
   all: 'Todos',
@@ -273,7 +267,7 @@ function LineLotRow({
   onAdjustQuantity: (lot: StockLot, delta: number) => void;
   onSetQualitative: (lot: StockLot, level: QualitativeLevel) => void;
 }) {
-  const { lot, location, visual, expiry, isLowStock } = meta;
+  const { lot, location, visual, expiry } = meta;
   const colors = LOCATION_COLOR_CLASSES[location?.colorToken ?? 'slate'];
 
   return (
@@ -312,7 +306,6 @@ function LineLotRow({
             {expiry.status === 'ok' && lot.expiresAt && (
               <span>Val: {formatDatePt(lot.expiresAt)}</span>
             )}
-            {isLowStock && <span className="font-semibold text-amber-700">Stock baixo</span>}
           </div>
         </div>
       </button>
@@ -426,6 +419,7 @@ export function StockView({
   const [editingLot, setEditingLot] = useState<StockLot | null>(null);
   const [quickLotId, setQuickLotId] = useState<string | null>(null);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
   const updatePrefs = (patch: Partial<StockViewPreferences>) => {
@@ -746,19 +740,73 @@ export function StockView({
             Stock da Casa
           </h1>
           <p className="truncate text-[11px] text-slate-500">
-            {stockLots.length} {stockLots.length === 1 ? 'registo' : 'registos'} ·{' '}
-            {lowStockSummaries.length} abaixo do mín.
+            {stockLots.length} {stockLots.length === 1 ? 'produto em casa' : 'produtos em casa'}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCatalogModalOpen(true)}
-            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <BookOpen className="h-3.5 w-3.5 text-teal-700" />
-            Catálogo
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((open) => !open)}
+              aria-expanded={moreMenuOpen}
+              aria-label="Mais opções do stock"
+              title="Mais opções"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition ${
+                moreMenuOpen
+                  ? 'border-teal-300 bg-teal-50 text-teal-900'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+            </button>
+
+            {moreMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setMoreMenuOpen(false)}
+                  aria-hidden="true"
+                />
+                <div className="absolute right-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      setCatalogModalOpen(true);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-teal-700" aria-hidden="true" />
+                      Catálogo de produtos
+                    </span>
+                    <span className="text-[11px] font-medium text-slate-400">
+                      {catalogItems.length}
+                    </span>
+                  </button>
+                  {lowStockSummaries.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        setStatusFilter('low');
+                      }}
+                      className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                        Stock baixo
+                      </span>
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                        {lowStockSummaries.length}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -848,7 +896,7 @@ export function StockView({
           }`}
         >
           <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>Filtros</span>
+          <span>Filtros e vista</span>
           {activeFiltersCount > 0 && (
             <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-teal-700 px-1 text-[10px] font-bold text-white">
               {activeFiltersCount}
@@ -885,54 +933,50 @@ export function StockView({
         </div>
       )}
 
-      {/* Collapsible Category + Status panel (open by default on PC, collapsed on mobile) */}
+      {/* Collapsible Filters & View options panel (open on PC, collapsed on mobile) */}
       {filtersOpen && (
-        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value as CatalogCategory | 'all')}
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600 sm:w-48"
-            aria-label="Filtrar por categoria"
-          >
-            <option value="all">Todas as categorias</option>
-            {Object.entries(CATALOG_CATEGORY_LABELS).map(([k, label]) => (
-              <option key={k} value={k}>
-                {label}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-xs">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value as CatalogCategory | 'all')}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+              aria-label="Filtrar por categoria"
+            >
+              <option value="all">Categoria: Todas</option>
+              {Object.entries(CATALOG_CATEGORY_LABELS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
 
-          <div className="flex flex-wrap gap-1">
-            {STATUS_FILTER_OPTIONS.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setStatusFilter(key)}
-                className={`rounded-lg px-2 py-1 text-[11px] font-medium transition ${
-                  statusFilter === key
-                    ? 'bg-teal-100 text-teal-900'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+              aria-label="Filtrar por estado"
+            >
+              <option value="all">Estado: Todos</option>
+              <option value="expiring">A expirar / Expirados</option>
+              <option value="low">Stock baixo</option>
+              <option value="leftovers">Sobras / Congelados</option>
+            </select>
           </div>
+
+          <CollectionToolbar
+            viewMode={prefs.viewMode}
+            onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
+            sortMode={prefs.sortMode}
+            sortOptions={STOCK_SORT_OPTIONS}
+            sortAriaLabel="Ordenar stock"
+            onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
+            groupActive={prefs.groupEnabled}
+            groupTitle="Agrupar por localização"
+            onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
+          />
         </div>
       )}
-
-      {/* Thin single-row View Mode + Sort + Group toolbar */}
-      <CollectionToolbar
-        viewMode={prefs.viewMode}
-        onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
-        sortMode={prefs.sortMode}
-        sortOptions={STOCK_SORT_OPTIONS}
-        sortAriaLabel="Ordenar stock"
-        onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
-        groupActive={prefs.groupEnabled}
-        groupTitle="Agrupar por localização"
-        onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
-      />
 
       {/* Low stock items with zero active lots */}
       {statusFilter === 'low' &&

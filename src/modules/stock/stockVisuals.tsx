@@ -34,7 +34,7 @@ export type StockSortMode = 'expiry' | 'name' | 'location';
 export type StockViewPreferences = CollectionViewPreferences<StockSortMode>;
 
 const DEFAULT_PREFERENCES: StockViewPreferences = {
-  viewMode: 'medium',
+  viewMode: 'line',
   sortMode: 'expiry',
   groupEnabled: false,
 };

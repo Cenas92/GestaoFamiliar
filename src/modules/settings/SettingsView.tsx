@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import {
+  BookOpen,
   Check,
   ChevronDown,
   Cloud,
@@ -38,6 +39,7 @@ import { exportManualBackupJson, importManualBackupJson } from '../../sync/syncS
 import { clearGoogleSyncLinked, markGoogleSyncLinked } from '../../sync/useAutoSync';
 import type {
   AppSettings,
+  CatalogItem,
   HouseholdMember,
   HouseholdRole,
   LocationColorToken,
@@ -45,11 +47,13 @@ import type {
   StorageLocation,
 } from '../../types/domain';
 import { createSyncMetadata, nowIso } from '../../utils/id';
+import { CatalogManagerModal } from '../stock/CatalogManagerModal';
 
 interface SettingsViewProps {
   settings: AppSettings;
   members: HouseholdMember[];
   locations: StorageLocation[];
+  catalogItems?: CatalogItem[];
   onSyncNow: () => Promise<string>;
 }
 
@@ -177,7 +181,7 @@ function MemberFormFields({
   );
 }
 
-type SettingsSectionId = 'members' | 'locations' | 'sync' | 'backup' | 'about';
+type SettingsSectionId = 'members' | 'locations' | 'catalog' | 'sync' | 'backup' | 'about';
 
 function AccordionSection({
   title,
@@ -228,11 +232,13 @@ export function SettingsView({
   settings,
   members,
   locations,
+  catalogItems = [],
   onSyncNow,
 }: SettingsViewProps) {
   const [openSection, setOpenSection] = useState<SettingsSectionId | null>('members');
   const toggleSection = (id: SettingsSectionId) =>
     setOpenSection((prev) => (prev === id ? null : id));
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [clientId, setClientId] = useState(settings.googleClientId);
   const [pickerApiKey, setPickerApiKey] = useState(
     () => localStorage.getItem('gf_google_picker_key') ?? '',
@@ -681,6 +687,28 @@ export function SettingsView({
         </form>
       </AccordionSection>
 
+      {/* Product Catalog & Minimum Stock Settings */}
+      <AccordionSection
+        title="Catálogo de Produtos Base"
+        icon={<BookOpen className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${catalogItems.length}`}
+        isOpen={openSection === 'catalog'}
+        onToggle={() => toggleSection('catalog')}
+      >
+        <p className="text-xs text-slate-500">
+          Gere os produtos base da casa, a secção habitual no supermercado e os alertas de stock
+          mínimo.
+        </p>
+        <button
+          type="button"
+          onClick={() => setCatalogModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          <BookOpen className="h-4 w-4 text-teal-700" aria-hidden="true" />
+          Gerir catálogo de produtos ({catalogItems.length})
+        </button>
+      </AccordionSection>
+
       {/* Google Drive Sync & Preferences */}
       <AccordionSection
         title="Sincronização Privada (Google Drive) e Alertas"
@@ -994,6 +1022,14 @@ export function SettingsView({
           </p>
         )}
       </AccordionSection>
+
+      <CatalogManagerModal
+        open={catalogModalOpen}
+        onClose={() => setCatalogModalOpen(false)}
+        catalogItems={catalogItems}
+        locations={locations}
+        deviceId={settings.deviceId}
+      />
     </div>
   );
 }

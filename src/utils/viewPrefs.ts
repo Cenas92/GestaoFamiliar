@@ -16,9 +16,9 @@ export const COLLECTION_VIEW_MODE_OPTIONS: {
   shortLabel: string;
   Icon: LucideIcon;
 }[] = [
+  { id: 'line', label: 'Lista compacta em linha', shortLabel: 'Em linha', Icon: List },
   { id: 'medium', label: 'Cartões padrão', shortLabel: 'Padrão', Icon: LayoutList },
   { id: 'detailed', label: 'Cartões detalhados', shortLabel: 'Detalhada', Icon: FileText },
-  { id: 'line', label: 'Lista compacta em linha', shortLabel: 'Em linha', Icon: List },
   { id: 'grid', label: 'Grelha em quadrados', shortLabel: 'Quadrados', Icon: LayoutGrid },
 ];
 

@@ -43,7 +43,6 @@ function readInitialTab(): AppTab {
 export function App() {
   const data = useFamilyData();
   const [activeTab, setActiveTab] = useState<AppTab>(readInitialTab);
-  const [openRecipeCreate, setOpenRecipeCreate] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
   const [dismissedAuthBanner, setDismissedAuthBanner] = useState(false);
@@ -158,7 +157,7 @@ export function App() {
     <div className="min-h-dvh bg-slate-50 pb-24 sm:pb-8">
       {/* Top Bar */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2.5">
           <button
             type="button"
             onClick={() => navigate('today')}
@@ -167,14 +166,9 @@ export function App() {
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-700 text-sm font-black text-white">
               GF
             </span>
-            <div>
-              <span className="block text-sm font-bold leading-tight text-slate-900">
-                Gestão Familiar
-              </span>
-              <span className="block text-[11px] text-slate-500">
-                Casa, Stock &amp; Receitas · v{APP_INFO.version}
-              </span>
-            </div>
+            <span className="text-sm font-bold leading-tight text-slate-900">
+              Gestão Familiar
+            </span>
           </button>
 
           {/* Desktop Navigation */}
@@ -367,14 +361,8 @@ export function App() {
             stockLots={data.stockLots}
             recipes={data.recipes}
             mealPlan={data.mealPlan}
-            shoppingItems={data.shoppingItems}
             members={data.members}
             onNavigate={navigate}
-            onQuickNewRecipe={() => {
-              setOpenRecipeCreate(true);
-              navigate('recipes');
-            }}
-            onSyncNow={handleSyncNow}
           />
         )}
 
@@ -400,8 +388,6 @@ export function App() {
             shoppingItems={data.shoppingItems}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
-            openCreateInitially={openRecipeCreate}
-            onConsumeCreateInitial={() => setOpenRecipeCreate(false)}
           />
         )}
 
@@ -435,6 +421,7 @@ export function App() {
             settings={data.settings}
             members={data.members}
             locations={data.locations}
+            catalogItems={data.catalogItems}
             onSyncNow={handleSyncNow}
           />
         )}

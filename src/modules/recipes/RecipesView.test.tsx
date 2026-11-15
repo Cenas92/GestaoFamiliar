@@ -184,7 +184,7 @@ describe('RecipesView compact filters, view modes, icons and grouping', () => {
     cleanup();
   });
 
-  it('defaults to Cartões padrão, expands Cartões detalhados and persists viewMode in localStorage', () => {
+  it('defaults to Lista compacta em linha, expands Cartões detalhados and persists viewMode in localStorage', () => {
     render(
       <RecipesView
         recipes={RECIPES}
@@ -198,9 +198,9 @@ describe('RecipesView compact filters, view modes, icons and grouping', () => {
       />,
     );
 
-    const mediumBtn = screen.getByRole('button', { name: 'Cartões padrão' });
+    const lineBtn = screen.getByRole('button', { name: 'Lista compacta em linha' });
     const detailedBtn = screen.getByRole('button', { name: 'Cartões detalhados' });
-    expect(mediumBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(lineBtn).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByText('Triturar até ficar cremoso.')).not.toBeInTheDocument();
 
     fireEvent.click(detailedBtn);
@@ -281,10 +281,11 @@ describe('RecipesView compact filters, view modes, icons and grouping', () => {
         />,
       );
 
-      // Collapsed on mobile (< 640px)
-      const filtersBtn = screen.getByRole('button', { name: /Filtros/i });
+      // Collapsed on mobile (< 640px), including view/sort/group controls
+      const filtersBtn = screen.getByRole('button', { name: /Filtros e vista/i });
       expect(filtersBtn).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByLabelText('Filtrar por categoria')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Agrupar/i })).not.toBeInTheDocument();
 
       fireEvent.click(filtersBtn);
       fireEvent.change(screen.getByLabelText('Filtrar por categoria'), {
@@ -298,7 +299,8 @@ describe('RecipesView compact filters, view modes, icons and grouping', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Remover filtro Sopas' }));
       expect(screen.getByText('Pescada no Forno')).toBeInTheDocument();
 
-      // Collapsible category grouping
+      // Open Filtros e vista again to enable collapsible category grouping
+      fireEvent.click(filtersBtn);
       fireEvent.click(screen.getByRole('button', { name: /Agrupar/i }));
       const fishHeader = screen
         .getAllByRole('button', { name: /Peixe/i })
