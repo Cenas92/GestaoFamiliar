@@ -11,10 +11,12 @@ import {
   HardDrive,
   HelpCircle,
   Info,
+  Layers,
   MapPin,
   Pencil,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
   Upload,
   Users,
@@ -47,6 +49,7 @@ import type {
   StorageLocation,
 } from '../../types/domain';
 import { createSyncMetadata, nowIso } from '../../utils/id';
+import type { UiDensityMode } from '../../utils/viewPrefs';
 import { CatalogManagerModal } from '../stock/CatalogManagerModal';
 
 interface SettingsViewProps {
@@ -54,6 +57,8 @@ interface SettingsViewProps {
   members: HouseholdMember[];
   locations: StorageLocation[];
   catalogItems?: CatalogItem[];
+  uiDensity?: UiDensityMode;
+  onChangeUiDensity?: (mode: UiDensityMode) => void;
   onSyncNow: () => Promise<string>;
 }
 
@@ -181,7 +186,14 @@ function MemberFormFields({
   );
 }
 
-type SettingsSectionId = 'members' | 'locations' | 'catalog' | 'sync' | 'backup' | 'about';
+type SettingsSectionId =
+  | 'interface'
+  | 'members'
+  | 'locations'
+  | 'catalog'
+  | 'sync'
+  | 'backup'
+  | 'about';
 
 function AccordionSection({
   title,
@@ -233,6 +245,8 @@ export function SettingsView({
   members,
   locations,
   catalogItems = [],
+  uiDensity = 'clean',
+  onChangeUiDensity,
   onSyncNow,
 }: SettingsViewProps) {
   const [openSection, setOpenSection] = useState<SettingsSectionId | null>('members');
@@ -515,6 +529,81 @@ export function SettingsView({
           {errorMsg}
         </div>
       )}
+
+      {/* Interface Mode (Clean vs Complete pre-1.2.0) */}
+      <AccordionSection
+        title="Aspeto e Vista da App"
+        icon={
+          uiDensity === 'complete' ? (
+            <Layers className="h-4 w-4 shrink-0 text-indigo-700" />
+          ) : (
+            <Sparkles className="h-4 w-4 shrink-0 text-teal-700" />
+          )
+        }
+        badge={uiDensity === 'complete' ? 'Completa' : 'Clean'}
+        isOpen={openSection === 'interface'}
+        onToggle={() => toggleSection('interface')}
+      >
+        <p className="text-xs text-slate-500">
+          Escolhe como queres ver a aplicação neste dispositivo. Podes também alternar rapidamente
+          no botão do cabeçalho superior.
+        </p>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => onChangeUiDensity?.('clean')}
+            aria-pressed={uiDensity === 'clean'}
+            className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition ${
+              uiDensity === 'clean'
+                ? 'border-teal-600 bg-teal-50/70 ring-1 ring-teal-600'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Sparkles className="h-3.5 w-3.5 text-teal-700" aria-hidden="true" />
+                Vista Clean (predefinida)
+              </span>
+              {uiDensity === 'clean' && (
+                <span className="rounded-full bg-teal-700 px-2 py-0.5 text-[10px] font-bold text-white">
+                  Ativa
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] leading-snug text-slate-600">
+              Menos ruído visual: Hoje calmo, listas em linha por defeito e filtros recolhidos no
+              telemóvel.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onChangeUiDensity?.('complete')}
+            aria-pressed={uiDensity === 'complete'}
+            className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition ${
+              uiDensity === 'complete'
+                ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-600'
+                : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Layers className="h-3.5 w-3.5 text-indigo-700" aria-hidden="true" />
+                Vista Completa (pré-1.2.0)
+              </span>
+              {uiDensity === 'complete' && (
+                <span className="rounded-full bg-indigo-700 px-2 py-0.5 text-[10px] font-bold text-white">
+                  Ativa
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] leading-snug text-slate-600">
+              Atalhos rápidos e stock mínimo em Hoje, filtros visíveis por defeito, Catálogo direto
+              e cartões padrão.
+            </p>
+          </button>
+        </div>
+      </AccordionSection>
 
       {/* Household Members */}
       <AccordionSection

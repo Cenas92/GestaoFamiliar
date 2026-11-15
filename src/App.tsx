@@ -7,10 +7,12 @@ import {
   Cloud,
   CloudAlert,
   Home,
+  Layers,
   Package,
   RefreshCw,
   Settings,
   ShoppingCart,
+  Sparkles,
   WifiOff,
   X,
 } from 'lucide-react';
@@ -22,6 +24,7 @@ import { evaluateRecipeMatch } from './modules/recipes/matchingEngine';
 import { RecipesView } from './modules/recipes/RecipesView';
 import { SettingsView } from './modules/settings/SettingsView';
 import { ShoppingView } from './modules/shopping/ShoppingView';
+import { summarizeCatalogStock } from './modules/stock/stockService';
 import { StockView } from './modules/stock/StockView';
 import { TodayView } from './modules/today/TodayView';
 import { checkForPwaUpdate } from './pwaUpdate';
@@ -33,6 +36,11 @@ import {
   getWeekStartMonday,
   todayDateString,
 } from './utils/units';
+import {
+  loadUiDensityMode,
+  switchUiDensityMode,
+  type UiDensityMode,
+} from './utils/viewPrefs';
 
 const HASH_TO_TAB: Record<string, AppTab> = {
   '#today': 'today',
@@ -50,10 +58,18 @@ function readInitialTab(): AppTab {
 export function App() {
   const data = useFamilyData();
   const [activeTab, setActiveTab] = useState<AppTab>(readInitialTab);
+  const [uiDensity, setUiDensity] = useState<UiDensityMode>(() => loadUiDensityMode());
+  const [openStockCreate, setOpenStockCreate] = useState(false);
+  const [openRecipeCreate, setOpenRecipeCreate] = useState(false);
   const [plannerWeekStart, setPlannerWeekStart] = useState(() => getWeekStartMonday());
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
   const [dismissedAuthBanner, setDismissedAuthBanner] = useState(false);
+
+  const handleChangeUiDensity = (nextMode: UiDensityMode) => {
+    switchUiDensityMode(nextMode);
+    setUiDensity(nextMode);
+  };
 
   const autoSync = useAutoSync(data.settings);
 
@@ -167,6 +183,24 @@ export function App() {
     today,
   ]);
 
+  const lowStockCount = useMemo(() => {
+    if (!data.ready || !data.settings || uiDensity !== 'complete' || activeTab !== 'stock') {
+      return 0;
+    }
+    const expiryWarningDays = data.settings.expiryWarningDays;
+    return data.catalogItems.filter(
+      (cat) => summarizeCatalogStock(cat, data.stockLots, expiryWarningDays, today).isLowStock,
+    ).length;
+  }, [
+    data.ready,
+    data.settings,
+    data.catalogItems,
+    data.stockLots,
+    uiDensity,
+    activeTab,
+    today,
+  ]);
+
   if (!data.ready || !data.settings) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-slate-50 text-sm font-medium text-slate-600">
@@ -183,7 +217,10 @@ export function App() {
       case 'today':
         return {
           title: 'Hoje em Casa',
-          subtitle: formatDatePt(today),
+          subtitle:
+            uiDensity === 'complete'
+              ? `${formatDatePt(today)} · ${data.stockLots.length} em stock · ${pendingShoppingCount} por comprar`
+              : formatDatePt(today),
           Icon: Home,
           badgeClass: 'bg-teal-100 text-teal-700',
         };
@@ -191,7 +228,10 @@ export function App() {
         const count = data.stockLots.length;
         return {
           title: 'Stock da Casa',
-          subtitle: `${count} ${count === 1 ? 'produto em casa' : 'produtos em casa'}`,
+          subtitle:
+            uiDensity === 'complete'
+              ? `${count} ${count === 1 ? 'registo ativo' : 'registos ativos'} · ${lowStockCount} abaixo do mínimo`
+              : `${count} ${count === 1 ? 'produto em casa' : 'produtos em casa'}`,
           Icon: Package,
           badgeClass: 'bg-cyan-100 text-cyan-700',
         };
@@ -200,9 +240,14 @@ export function App() {
         const count = data.recipes.length;
         return {
           title: 'As Nossas Receitas',
-          subtitle: `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
-            readyRecipesCount === 1 ? 'pronta' : 'prontas'
-          }`,
+          subtitle:
+            uiDensity === 'complete'
+              ? `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
+                  readyRecipesCount === 1 ? 'pronta 100%' : 'prontas 100%'
+                }`
+              : `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
+                  readyRecipesCount === 1 ? 'pronta' : 'prontas'
+                }`,
           Icon: ChefHat,
           badgeClass: 'bg-amber-100 text-amber-700',
         };
@@ -355,6 +400,39 @@ export function App() {
 
             <button
               type="button"
+              onClick={() => handleChangeUiDensity(uiDensity === 'clean' ? 'complete' : 'clean')}
+              aria-pressed={uiDensity === 'complete'}
+              aria-label={
+                uiDensity === 'clean'
+                  ? 'Vista Clean ativa — tocar para mudar para Vista Completa'
+                  : 'Vista Completa ativa — tocar para mudar para Vista Clean'
+              }
+              title={
+                uiDensity === 'clean'
+                  ? 'Vista Clean — tocar para Vista Completa (pré-1.2.0)'
+                  : 'Vista Completa — tocar para Vista Clean'
+              }
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition ${
+                uiDensity === 'complete'
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {uiDensity === 'complete' ? (
+                <>
+                  <Layers className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>Completa</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
+                  <span>Clean</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => navigate('settings')}
               className={`rounded-xl p-2 transition ${
                 activeTab === 'settings'
@@ -462,8 +540,19 @@ export function App() {
             stockLots={data.stockLots}
             recipes={data.recipes}
             mealPlan={data.mealPlan}
+            shoppingItems={data.shoppingItems}
             members={data.members}
+            uiDensity={uiDensity}
             onNavigate={navigate}
+            onQuickAddStock={() => {
+              setOpenStockCreate(true);
+              navigate('stock');
+            }}
+            onQuickNewRecipe={() => {
+              setOpenRecipeCreate(true);
+              navigate('recipes');
+            }}
+            onSyncNow={handleSyncNow}
           />
         )}
 
@@ -476,6 +565,9 @@ export function App() {
             recipes={data.recipes}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
+            uiDensity={uiDensity}
+            openCreateInitially={openStockCreate}
+            onConsumeCreateInitial={() => setOpenStockCreate(false)}
           />
         )}
 
@@ -489,6 +581,9 @@ export function App() {
             shoppingItems={data.shoppingItems}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
+            uiDensity={uiDensity}
+            openCreateInitially={openRecipeCreate}
+            onConsumeCreateInitial={() => setOpenRecipeCreate(false)}
           />
         )}
 
@@ -516,6 +611,7 @@ export function App() {
             locations={data.locations}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
+            uiDensity={uiDensity}
           />
         )}
 
@@ -525,6 +621,8 @@ export function App() {
             members={data.members}
             locations={data.locations}
             catalogItems={data.catalogItems}
+            uiDensity={uiDensity}
+            onChangeUiDensity={handleChangeUiDensity}
             onSyncNow={handleSyncNow}
           />
         )}

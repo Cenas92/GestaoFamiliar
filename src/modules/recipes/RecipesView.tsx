@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ChefHat,
@@ -16,6 +16,7 @@ import { AttachmentImage } from '../../components/AttachmentPreview';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
 import { TypeIconBadge, type TypeVisualMeta } from '../../components/TypeIconBadge';
 import { RECIPE_CATEGORY_LABELS } from '../../constants/labels';
+import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
 import type {
   CatalogItem,
   HouseholdMember,
@@ -26,6 +27,7 @@ import type {
   StorageLocation,
 } from '../../types/domain';
 import { formatDatePt, normalizeText, todayDateString } from '../../utils/units';
+import { shouldExpandPanelsByDefault, type UiDensityMode } from '../../utils/viewPrefs';
 import { CookRecipeModal } from './CookRecipeModal';
 import { evaluateRecipeMatch, type RecipeMatchResult } from './matchingEngine';
 import { RecipeDetailModal } from './RecipeDetailModal';
@@ -50,6 +52,9 @@ interface RecipesViewProps {
   shoppingItems: ShoppingItem[];
   expiryWarningDays: number;
   deviceId: string;
+  uiDensity?: UiDensityMode;
+  openCreateInitially?: boolean;
+  onConsumeCreateInitial?: () => void;
 }
 
 type MatchFilter = 'all' | 'ready' | 'almost' | 'expiring';
@@ -372,17 +377,26 @@ export function RecipesView({
   shoppingItems,
   expiryWarningDays,
   deviceId,
+  uiDensity = 'clean',
+  openCreateInitially = false,
+  onConsumeCreateInitial,
 }: RecipesViewProps) {
+  const isComplete = uiDensity === 'complete';
   const [search, setSearch] = useState('');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<RecipeCategory | 'all'>('all');
   const [maxMinutes, setMaxMinutes] = useState<number>(0);
   const [memberFilter, setMemberFilter] = useState<string>('all');
   const [filtersOpen, setFiltersOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 640 : true,
+    shouldExpandPanelsByDefault(uiDensity),
   );
 
-  const [prefs, setPrefs] = useState<RecipeViewPreferences>(() => loadRecipeViewPreferences());
+  const [prefs, updatePrefs] = useCollectionViewPrefs<RecipeViewPreferences['sortMode']>(
+    uiDensity,
+    loadRecipeViewPreferences,
+    saveRecipeViewPreferences,
+    (nextDensity) => setFiltersOpen(shouldExpandPanelsByDefault(nextDensity)),
+  );
   const [collapsedCategories, setCollapsedCategories] = useState<Set<RecipeCategory>>(
     () => new Set(),
   );
@@ -392,13 +406,13 @@ export function RecipesView({
   const [detailRecipeId, setDetailRecipeId] = useState<string | null>(null);
   const [cookState, setCookState] = useState<{ recipe: Recipe; servings: number } | null>(null);
 
-  const updatePrefs = (patch: Partial<RecipeViewPreferences>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      saveRecipeViewPreferences(next);
-      return next;
-    });
-  };
+  useEffect(() => {
+    if (openCreateInitially) {
+      setEditingRecipe(null);
+      setFormOpen(true);
+      onConsumeCreateInitial?.();
+    }
+  }, [openCreateInitially, onConsumeCreateInitial]);
 
   const today = todayDateString();
   const recipesMap = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
@@ -563,7 +577,8 @@ export function RecipesView({
       <div className="flex items-center justify-between gap-2">
         <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
           {MATCH_FILTER_OPTIONS.filter(
-            ([key]) => key === 'all' || matchCounts[key] > 0 || matchFilter === key,
+            ([key]) =>
+              isComplete || key === 'all' || matchCounts[key] > 0 || matchFilter === key,
           ).map(([key, label]) => (
             <button
               key={key}

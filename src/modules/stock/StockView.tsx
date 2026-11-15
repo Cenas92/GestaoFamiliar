@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
@@ -22,6 +22,7 @@ import {
   SUPERMARKET_SECTION_LABELS,
 } from '../../constants/labels';
 import { db } from '../../db/database';
+import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
 import type {
   CatalogCategory,
   CatalogItem,
@@ -40,6 +41,7 @@ import {
   normalizeText,
   todayDateString,
 } from '../../utils/units';
+import { shouldExpandPanelsByDefault, type UiDensityMode } from '../../utils/viewPrefs';
 import { buildShoppingItem } from '../planner/plannerService';
 import { CatalogManagerModal } from './CatalogManagerModal';
 import { StockLotModal } from './StockLotModal';
@@ -67,6 +69,9 @@ interface StockViewProps {
   recipes?: Recipe[];
   expiryWarningDays: number;
   deviceId: string;
+  uiDensity?: UiDensityMode;
+  openCreateInitially?: boolean;
+  onConsumeCreateInitial?: () => void;
 }
 
 type StatusFilter = 'all' | 'expiring' | 'low' | 'leftovers';
@@ -403,16 +408,25 @@ export function StockView({
   recipes = [],
   expiryWarningDays,
   deviceId,
+  uiDensity = 'clean',
+  openCreateInitially = false,
+  onConsumeCreateInitial,
 }: StockViewProps) {
+  const isComplete = uiDensity === 'complete';
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<CatalogCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   const [filtersOpen, setFiltersOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 640 : true,
+    shouldExpandPanelsByDefault(uiDensity),
   );
 
-  const [prefs, setPrefs] = useState<StockViewPreferences>(() => loadStockViewPreferences());
+  const [prefs, updatePrefs] = useCollectionViewPrefs<StockViewPreferences['sortMode']>(
+    uiDensity,
+    loadStockViewPreferences,
+    saveStockViewPreferences,
+    (nextDensity) => setFiltersOpen(shouldExpandPanelsByDefault(nextDensity)),
+  );
   const [collapsedLocationIds, setCollapsedLocationIds] = useState<Set<string>>(() => new Set());
 
   const [lotModalOpen, setLotModalOpen] = useState(false);
@@ -422,13 +436,13 @@ export function StockView({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
-  const updatePrefs = (patch: Partial<StockViewPreferences>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      saveStockViewPreferences(next);
-      return next;
-    });
-  };
+  useEffect(() => {
+    if (openCreateInitially) {
+      setEditingLot(null);
+      setLotModalOpen(true);
+      onConsumeCreateInitial?.();
+    }
+  }, [openCreateInitially, onConsumeCreateInitial]);
 
   const today = todayDateString();
   const catalogById = useMemo(
@@ -465,10 +479,12 @@ export function StockView({
 
   const visibleLocations = useMemo(
     () =>
-      locations.filter(
-        (loc) => (locationCounts.get(loc.id) ?? 0) > 0 || selectedLocationId === loc.id,
-      ),
-    [locations, locationCounts, selectedLocationId],
+      isComplete
+        ? locations
+        : locations.filter(
+            (loc) => (locationCounts.get(loc.id) ?? 0) > 0 || selectedLocationId === loc.id,
+          ),
+    [isComplete, locations, locationCounts, selectedLocationId],
   );
 
   const activeFiltersCount =
@@ -770,68 +786,79 @@ export function StockView({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <div className="relative">
+          {isComplete ? (
             <button
               type="button"
-              onClick={() => setMoreMenuOpen((open) => !open)}
-              aria-expanded={moreMenuOpen}
-              aria-label="Mais opções do stock"
-              title="Mais opções"
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition ${
-                moreMenuOpen
-                  ? 'border-teal-300 bg-teal-50 text-teal-900'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
+              onClick={() => setCatalogModalOpen(true)}
+              className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              <BookOpen className="h-3.5 w-3.5 text-teal-700" aria-hidden="true" />
+              <span>Catálogo</span>
             </button>
+          ) : (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen((open) => !open)}
+                aria-expanded={moreMenuOpen}
+                aria-label="Mais opções do stock"
+                title="Mais opções"
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition ${
+                  moreMenuOpen
+                    ? 'border-teal-300 bg-teal-50 text-teal-900'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              </button>
 
-            {moreMenuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setMoreMenuOpen(false)}
-                  aria-hidden="true"
-                />
-                <div className="absolute right-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMoreMenuOpen(false);
-                      setCatalogModalOpen(true);
-                    }}
-                    className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-teal-700" aria-hidden="true" />
-                      Catálogo de produtos
-                    </span>
-                    <span className="text-[11px] font-medium text-slate-400">
-                      {catalogItems.length}
-                    </span>
-                  </button>
-                  {lowStockSummaries.length > 0 && (
+              {moreMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setMoreMenuOpen(false)}
+                    aria-hidden="true"
+                  />
+                  <div className="absolute right-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-lg">
                     <button
                       type="button"
                       onClick={() => {
                         setMoreMenuOpen(false);
-                        setStatusFilter('low');
+                        setCatalogModalOpen(true);
                       }}
-                      className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
                     >
                       <span className="inline-flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />
-                        Stock baixo
+                        <BookOpen className="h-4 w-4 text-teal-700" aria-hidden="true" />
+                        Catálogo de produtos
                       </span>
-                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-                        {lowStockSummaries.length}
+                      <span className="text-[11px] font-medium text-slate-400">
+                        {catalogItems.length}
                       </span>
                     </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+                    {lowStockSummaries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          setStatusFilter('low');
+                        }}
+                        className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                          Stock baixo
+                        </span>
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                          {lowStockSummaries.length}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <button
             type="button"
@@ -846,6 +873,31 @@ export function StockView({
           </button>
         </div>
       </div>
+
+      {/* Quick status chips directly visible in Complete mode (pre-1.2.0 layout) */}
+      {isComplete && (
+        <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
+          {(Object.entries(STATUS_FILTER_LABELS) as [StatusFilter, string][]).map(
+            ([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setStatusFilter(key)}
+                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                  statusFilter === key
+                    ? 'bg-teal-100 text-teal-900'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {label}
+                {key === 'low' && lowStockSummaries.length > 0
+                  ? ` (${lowStockSummaries.length})`
+                  : ''}
+              </button>
+            ),
+          )}
+        </div>
+      )}
 
       {feedbackToast && (
         <div className="rounded-xl bg-teal-900 px-3 py-1.5 text-xs font-medium text-white shadow">

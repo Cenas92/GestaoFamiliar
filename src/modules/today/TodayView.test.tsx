@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { db } from '../../db/database';
 import type {
   AppSettings,
   CatalogItem,
@@ -202,5 +203,93 @@ describe('TodayView calm summary', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver semana' }));
     expect(onNavigate).toHaveBeenCalledWith('planner');
+  });
+
+  it('shows quick shortcuts, priority low-stock alerts and up to 5 suggestions in complete mode', async () => {
+    await db.shoppingItems.clear();
+    const today = todayDateString();
+    const tomorrow = addDaysToDateString(today, 1);
+    const onNavigate = vi.fn();
+    const onQuickAddStock = vi.fn();
+    const onQuickNewRecipe = vi.fn();
+    const onSyncNow = vi.fn(async () => 'Sincronizado');
+
+    const stockLots: StockLot[] = [
+      {
+        id: 'lot-eggs',
+        catalogItemId: 'cat-eggs',
+        productLabel: 'Ovos Caseiros',
+        locationId: 'loc-fridge',
+        quantity: 6,
+        unit: 'un',
+        qualitativeLevel: null,
+        expiresAt: tomorrow,
+        frozenOrCookedAt: null,
+        isLeftover: false,
+        sourceRecipeId: null,
+        notes: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      },
+    ];
+
+    const recipes: Recipe[] = [
+      makeRecipe('r1', 'Omelete Simples', 'cat-eggs'),
+      makeRecipe('r2', 'Ovos Mexidos', 'cat-eggs'),
+      makeRecipe('r3', 'Tortilha', 'cat-eggs'),
+      makeRecipe('r4', 'Pudim de Ovos', 'cat-eggs'),
+      makeRecipe('r5', 'Quiche Rápida', 'cat-eggs'),
+      makeRecipe('r6', 'Crepes', 'cat-eggs'),
+    ];
+
+    render(
+      <TodayView
+        settings={{
+          ...SETTINGS,
+          googleClientId: 'client-1',
+          googleDriveFolderId: 'folder-1',
+        }}
+        locations={LOCATIONS}
+        catalogItems={CATALOG}
+        stockLots={stockLots}
+        recipes={recipes}
+        mealPlan={[]}
+        shoppingItems={[]}
+        members={MEMBERS}
+        uiDensity="complete"
+        onNavigate={onNavigate}
+        onQuickAddStock={onQuickAddStock}
+        onQuickNewRecipe={onQuickNewRecipe}
+        onSyncNow={onSyncNow}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Produto/i }));
+    expect(onQuickAddStock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Receita/i }));
+    expect(onQuickNewRecipe).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /Sincronizar Drive/i }));
+    await waitFor(() => {
+      expect(onSyncNow).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText('Alertas Prioritários')).toBeInTheDocument();
+    expect(screen.getByText(/Stock abaixo do mínimo \(1\)/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Leite' }));
+
+    await waitFor(async () => {
+      const items = await db.shoppingItems.toArray();
+      expect(items.some((i) => i.label === 'Leite')).toBe(true);
+    });
+
+    // Up to 5 cookable recipes in complete mode
+    expect(screen.getByText('Pudim de Ovos')).toBeInTheDocument();
+    expect(screen.getByText('Quiche Rápida')).toBeInTheDocument();
+    expect(screen.queryByText('Crepes')).not.toBeInTheDocument();
+    await db.shoppingItems.clear();
   });
 });

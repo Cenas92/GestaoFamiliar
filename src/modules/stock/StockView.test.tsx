@@ -373,4 +373,59 @@ describe('StockView view modes, symbols, sorting and grouping', () => {
       });
     }
   });
+
+  it('expands filters, shows empty locations, status strip and Catálogo button in complete mode on mobile', () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 375,
+    });
+
+    try {
+      const emptyFreezer: StorageLocation = {
+        id: 'loc-freezer',
+        name: 'Congelador',
+        locationType: 'freezer',
+        colorToken: 'blue',
+        icon: 'snowflake',
+        sortOrder: 3,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      };
+
+      render(
+        <StockView
+          locations={[...LOCATIONS, emptyFreezer]}
+          catalogItems={CATALOG_ITEMS}
+          stockLots={STOCK_LOTS}
+          shoppingItems={[]}
+          recipes={RECIPES}
+          expiryWarningDays={5}
+          deviceId="dev-1"
+          uiDensity="complete"
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: /Congelador \(0\)/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Catálogo' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Stock baixo/i })).toBeInTheDocument();
+
+      // Filters open by default even on mobile, with Cartões padrão selected
+      const filtersBtn = screen.getByRole('button', { name: /Filtros e vista/i });
+      expect(filtersBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: 'Cartões padrão' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: originalWidth,
+      });
+    }
+  });
 });

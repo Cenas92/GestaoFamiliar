@@ -25,6 +25,7 @@ import {
   UNITS,
 } from '../../constants/labels';
 import { db } from '../../db/database';
+import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
 import type {
   CatalogItem,
   ShoppingItem,
@@ -41,6 +42,7 @@ import {
   normalizeText,
   todayDateString,
 } from '../../utils/units';
+import { shouldExpandPanelsByDefault, type UiDensityMode } from '../../utils/viewPrefs';
 import { buildShoppingItem } from '../planner/plannerService';
 import { buildNewStockLot, summarizeCatalogStock } from '../stock/stockService';
 import { ShoppingQuickModal } from './ShoppingQuickModal';
@@ -62,6 +64,7 @@ interface ShoppingViewProps {
   locations: StorageLocation[];
   expiryWarningDays: number;
   deviceId: string;
+  uiDensity?: UiDensityMode;
 }
 
 interface PutAwayRow {
@@ -84,10 +87,6 @@ const STATUS_LABELS: Record<ShoppingStatusFilter, string> = {
 const SECTION_RANK = new Map<SupermarketSection, number>(
   SUPERMARKET_SECTION_ORDER.map((sec, idx) => [sec, idx]),
 );
-
-function isWideViewport(): boolean {
-  return typeof window !== 'undefined' ? window.innerWidth >= 640 : true;
-}
 
 function sortShoppingMetas(
   items: ShoppingItemDisplayMeta[],
@@ -395,7 +394,9 @@ export function ShoppingView({
   locations,
   expiryWarningDays,
   deviceId,
+  uiDensity = 'clean',
 }: ShoppingViewProps) {
+  const isComplete = uiDensity === 'complete';
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogItem | null>(null);
   const [freeText, setFreeText] = useState('');
   const [qty, setQty] = useState('1');
@@ -403,14 +404,27 @@ export function ShoppingView({
   const [section, setSection] = useState<SupermarketSection>('pantry');
   const [showCatalogInput, setShowCatalogInput] = useState(true);
 
-  const [addFormOpen, setAddFormOpen] = useState<boolean>(isWideViewport);
-  const [filtersOpen, setFiltersOpen] = useState<boolean>(isWideViewport);
+  const [addFormOpen, setAddFormOpen] = useState<boolean>(() =>
+    shouldExpandPanelsByDefault(uiDensity),
+  );
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(() =>
+    shouldExpandPanelsByDefault(uiDensity),
+  );
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ShoppingStatusFilter>('all');
   const [sectionFilter, setSectionFilter] = useState<SupermarketSection | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState<ShoppingItem['source'] | 'all'>('all');
 
-  const [prefs, setPrefs] = useState<ShoppingViewPreferences>(() => loadShoppingViewPreferences());
+  const [prefs, updatePrefs] = useCollectionViewPrefs<ShoppingViewPreferences['sortMode']>(
+    uiDensity,
+    loadShoppingViewPreferences,
+    saveShoppingViewPreferences,
+    (nextDensity) => {
+      const open = shouldExpandPanelsByDefault(nextDensity);
+      setFiltersOpen(open);
+      setAddFormOpen(open);
+    },
+  );
   const [collapsedSections, setCollapsedSections] = useState<Set<SupermarketSection>>(
     () => new Set(),
   );
@@ -419,14 +433,6 @@ export function ShoppingView({
   const [putAwayOpen, setPutAwayOpen] = useState(false);
   const [putAwayRows, setPutAwayRows] = useState<PutAwayRow[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-
-  const updatePrefs = (patch: Partial<ShoppingViewPreferences>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      saveShoppingViewPreferences(next);
-      return next;
-    });
-  };
 
   const today = todayDateString();
   const catalogById = useMemo(
@@ -770,7 +776,7 @@ export function ShoppingView({
           >
             Todos ({shoppingItems.length})
           </button>
-          {(uncheckedCount > 0 || statusFilter === 'unchecked') && (
+          {(isComplete || uncheckedCount > 0 || statusFilter === 'unchecked') && (
             <button
               type="button"
               onClick={() => setStatusFilter('unchecked')}
@@ -783,7 +789,7 @@ export function ShoppingView({
               Por comprar ({uncheckedCount})
             </button>
           )}
-          {(checkedItems.length > 0 || statusFilter === 'checked') && (
+          {(isComplete || checkedItems.length > 0 || statusFilter === 'checked') && (
             <button
               type="button"
               onClick={() => setStatusFilter('checked')}

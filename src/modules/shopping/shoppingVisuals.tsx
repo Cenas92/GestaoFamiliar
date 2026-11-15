@@ -4,19 +4,21 @@ import { getSupermarketSectionVisual } from '../../utils/sectionVisuals';
 import {
   loadCollectionPreferences,
   saveCollectionPreferences,
+  SHOPPING_PREFS_STORAGE_KEY,
   type CollectionViewPreferences,
+  type UiDensityMode,
 } from '../../utils/viewPrefs';
 
 export type ShoppingSortMode = 'section' | 'unchecked_first' | 'name';
 export type ShoppingViewPreferences = CollectionViewPreferences<ShoppingSortMode>;
+
+export { SHOPPING_PREFS_STORAGE_KEY };
 
 const DEFAULT_SHOPPING_PREFS: ShoppingViewPreferences = {
   viewMode: 'line',
   sortMode: 'section',
   groupEnabled: true,
 };
-
-export const SHOPPING_PREFS_STORAGE_KEY = 'gestao_familiar_shopping_view_prefs';
 
 const VALID_SORT_MODES: readonly ShoppingSortMode[] = [
   'section',
@@ -37,11 +39,15 @@ export const SHOPPING_SOURCE_LABELS: Record<ShoppingItem['source'], string> = {
   meal_plan: 'Ementa',
 };
 
-export function loadShoppingViewPreferences(): ShoppingViewPreferences {
+export function loadShoppingViewPreferences(
+  uiDensity: UiDensityMode = 'clean',
+): ShoppingViewPreferences {
   return loadCollectionPreferences(
     SHOPPING_PREFS_STORAGE_KEY,
     VALID_SORT_MODES,
     DEFAULT_SHOPPING_PREFS,
+    undefined,
+    uiDensity,
   );
 }
 

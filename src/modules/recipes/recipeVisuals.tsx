@@ -18,20 +18,22 @@ import {
 import type { Recipe, RecipeCategory } from '../../types/domain';
 import {
   loadCollectionPreferences,
+  RECIPE_PREFS_STORAGE_KEY,
   saveCollectionPreferences,
   type CollectionViewPreferences,
+  type UiDensityMode,
 } from '../../utils/viewPrefs';
 
 export type RecipeSortMode = 'compatibility' | 'time' | 'name' | 'cooked';
 export type RecipeViewPreferences = CollectionViewPreferences<RecipeSortMode>;
+
+export { RECIPE_PREFS_STORAGE_KEY };
 
 const DEFAULT_RECIPE_PREFS: RecipeViewPreferences = {
   viewMode: 'line',
   sortMode: 'compatibility',
   groupEnabled: false,
 };
-
-export const RECIPE_PREFS_STORAGE_KEY = 'gestao_familiar_recipe_view_prefs';
 
 const VALID_SORT_MODES: readonly RecipeSortMode[] = [
   'compatibility',
@@ -47,8 +49,14 @@ export const RECIPE_SORT_OPTIONS: { value: RecipeSortMode; label: string }[] = [
   { value: 'cooked', label: 'Mais cozinhada' },
 ];
 
-export function loadRecipeViewPreferences(): RecipeViewPreferences {
-  return loadCollectionPreferences(RECIPE_PREFS_STORAGE_KEY, VALID_SORT_MODES, DEFAULT_RECIPE_PREFS);
+export function loadRecipeViewPreferences(uiDensity: UiDensityMode = 'clean'): RecipeViewPreferences {
+  return loadCollectionPreferences(
+    RECIPE_PREFS_STORAGE_KEY,
+    VALID_SORT_MODES,
+    DEFAULT_RECIPE_PREFS,
+    undefined,
+    uiDensity,
+  );
 }
 
 export function saveRecipeViewPreferences(prefs: RecipeViewPreferences): void {

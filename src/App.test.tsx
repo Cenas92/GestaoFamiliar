@@ -1,8 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 
 describe('App integration', () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    window.location.hash = '';
+  });
+
   it('renders Hoje dashboard after seeding and switches between main tabs', async () => {
     render(<App />);
 
@@ -54,6 +60,84 @@ describe('App integration', () => {
 
     await waitFor(() => {
       expect(screen.getByText('AI-Cenas92')).toBeInTheDocument();
+    });
+  });
+
+  it('switches between Clean and Complete modes from header & Settings and preserves per-tab customization', async () => {
+    window.localStorage.clear();
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Hoje em Casa' })).toBeInTheDocument();
+    });
+
+    // Starts in Clean mode by default
+    const densityToggle = screen.getByRole('button', { name: /Vista Clean ativa/i });
+    expect(densityToggle).toHaveTextContent('Clean');
+    expect(screen.queryByText('Alertas Prioritários')).not.toBeInTheDocument();
+
+    // Switch to Complete mode via top bar toggle
+    fireEvent.click(densityToggle);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Vista Completa ativa/i })).toHaveTextContent(
+        'Completa',
+      );
+      expect(screen.getByRole('button', { name: /\+ Produto/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /\+ Receita/i })).toBeInTheDocument();
+      expect(screen.getByText('Alertas Prioritários')).toBeInTheDocument();
+    });
+
+    // Navigate to Stock -> Complete mode shows "abaixo do mínimo" subtitle, Catálogo button & Cartões padrão
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stock$/i })[0]);
+    await waitFor(() => {
+      expect(screen.getByText(/abaixo do mínimo/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Catálogo' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cartões padrão' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+
+    // Customize Stock to Quadrados while staying in Complete mode
+    fireEvent.click(screen.getByRole('button', { name: 'Grelha em quadrados' }));
+    expect(screen.getByRole('button', { name: 'Grelha em quadrados' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // Switch away and back to Stock -> custom Quadrados view stays intact
+    fireEvent.click(screen.getAllByRole('button', { name: /^Receitas$/i })[0]);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Cartões padrão' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stock$/i })[0]);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Grelha em quadrados' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+
+    // Switch back to Clean via Settings -> Aspeto e Vista da App
+    fireEvent.click(screen.getByRole('button', { name: /Definições e Família/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Aspeto e Vista da App/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Aspeto e Vista da App/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Vista Clean \(predefinida\)/i }));
+
+    expect(screen.getByRole('button', { name: /Vista Clean ativa/i })).toHaveTextContent('Clean');
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stock$/i })[0]);
+    await waitFor(() => {
+      expect(screen.getByText(/produtos em casa/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Lista compacta em linha' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
     });
   });
 });

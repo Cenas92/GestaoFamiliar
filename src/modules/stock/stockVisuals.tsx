@@ -11,8 +11,10 @@ import { getSupermarketSectionVisual } from '../../utils/sectionVisuals';
 import {
   loadCollectionPreferences,
   saveCollectionPreferences,
+  STOCK_PREFS_STORAGE_KEY,
   type CollectionViewMode,
   type CollectionViewPreferences,
+  type UiDensityMode,
 } from '../../utils/viewPrefs';
 import type { LotExpiryInfo } from './stockService';
 
@@ -33,13 +35,13 @@ export type StockViewMode = CollectionViewMode;
 export type StockSortMode = 'expiry' | 'name' | 'location';
 export type StockViewPreferences = CollectionViewPreferences<StockSortMode>;
 
+export { STOCK_PREFS_STORAGE_KEY };
+
 const DEFAULT_PREFERENCES: StockViewPreferences = {
   viewMode: 'line',
   sortMode: 'expiry',
   groupEnabled: false,
 };
-
-export const STOCK_PREFS_STORAGE_KEY = 'gestao_familiar_stock_view_prefs';
 
 const VALID_SORT_MODES: readonly StockSortMode[] = ['expiry', 'name', 'location'];
 
@@ -49,13 +51,14 @@ export const STOCK_SORT_OPTIONS: { value: StockSortMode; label: string }[] = [
   { value: 'location', label: 'Localização' },
 ];
 
-export function loadStockViewPreferences(): StockViewPreferences {
+export function loadStockViewPreferences(uiDensity: UiDensityMode = 'clean'): StockViewPreferences {
   return loadCollectionPreferences(
     STOCK_PREFS_STORAGE_KEY,
     VALID_SORT_MODES,
     DEFAULT_PREFERENCES,
     (raw) =>
       typeof raw.groupByLocation === 'boolean' ? { groupEnabled: raw.groupByLocation } : {},
+    uiDensity,
   );
 }
 

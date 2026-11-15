@@ -19,9 +19,10 @@ Este ficheiro guarda as preferências permanentes de produto, interface e fluxo 
   - Começar **recolhido por padrão no telemóvel (`< 640px`)** e **aberto no PC (`>= 640px`)**.
   - Juntar os controlos de **Vista** (`Em linha`, `Padrão`, `Detalhada`, `Quadrados`), **Ordenar** e **Agrupar** dentro desse mesmo painel (abaixo dos selects de filtro) em vez de empilhar uma barra extra visível por defeito.
   - Quando fechado e existirem filtros ativos, exibir chips clicáveis (`×`) para limpar cada filtro num toque.
-- **Vistas múltiplas e densidade limpa**:
-  - Usar **`Lista compacta em linha` (`line`) como vista padrão** em dispositivos novos nas coleções (`Stock`, `Receitas`, `Compras`), mantendo os **4 modos** (`Em linha`, `Padrão`, `Detalhada`, `Quadrados` com 3 quadrados por linha no telemóvel) guardados **por dispositivo em `localStorage`**.
-  - Em **Hoje**, apresentar apenas resumo calmo do dia (`Descongelar`, `Validades`, `Ementa de Hoje` e até 3 sugestões prontas para cozinhar).
+- **Vistas múltiplas e modos globais (`Clean` vs `Completa`)**:
+  - Suportar dois modos de densidade guardados **por dispositivo em `localStorage`** (`gestao_familiar_ui_density_mode`), alternáveis pelo botão rápido no cabeçalho superior (`Clean` / `Completa`) e em **Definições → Aspeto e Vista da App**:
+    - **`Clean` (predefinido em dispositivos novos)**: vista padrão **`Lista compacta em linha` (`line`)** em `Stock`, `Receitas` e `Compras`, filtros recolhidos por padrão no telemóvel (`< 640px`), barra **Hoje** calma (sem atalhos extra nem stock mínimo, até 3 sugestões prontas), sem contadores técnicos nem pills vazias.
+    - **`Completa` (pré-1.2.0)**: aplica por defeito **`Cartões padrão` (`medium`)** e filtros/adição visíveis desde logo no telemóvel e PC; mostra atalhos rápidos (`+ Produto`, `+ Receita`, `Compras`, `Sync`) e `Alertas Prioritários` (validades + stock abaixo do mínimo) com até 5 receitas em **Hoje**; em **Stock**, exibe botão direto `Catálogo`, localizações com `0` e pills rápidas de estado; em **Receitas** e **Compras**, exibe todas as pills de estado mesmo com `0`. Após alternar de modo, o utilizador pode continuar a personalizar individualmente qualquer vista (`Em linha`, `Padrão`, `Detalhada`, `Quadrados`).
   - Em **Ementa**, manter `Hoje` e dias com refeições expandidos, e compactar dias vazios numa linha simples com botão `+ Planear`.
   - Usar símbolos vetoriais modernos (Lucide) com fundo pastel suave por tipologia (ou miniatura da foto quando existir, como nas receitas) e manter espaçamentos verticais enxutos (`space-y-2.5`).
 
