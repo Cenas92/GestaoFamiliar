@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowUpDown,
   BookOpen,
-  Minus,
+  ChevronDown,
+  ChevronRight,
+  FolderTree,
   Pencil,
   Plus,
   Search,
@@ -14,12 +17,14 @@ import {
   CATALOG_CATEGORY_LABELS,
   LOCATION_COLOR_CLASSES,
   QUALITATIVE_LABELS,
+  SUPERMARKET_SECTION_LABELS,
 } from '../../constants/labels';
 import { db } from '../../db/database';
 import type {
   CatalogCategory,
   CatalogItem,
   QualitativeLevel,
+  Recipe,
   ShoppingItem,
   StockLot,
   StorageLocation,
@@ -36,18 +41,41 @@ import {
 import { buildShoppingItem } from '../planner/plannerService';
 import { CatalogManagerModal } from './CatalogManagerModal';
 import { StockLotModal } from './StockLotModal';
+import {
+  StockQuantityControls,
+  StockQuickModal,
+  StockStatusBadges,
+} from './StockQuickModal';
 import { getLotExpiryInfo, summarizeCatalogStock } from './stockService';
+import {
+  getStockTypeVisual,
+  loadStockViewPreferences,
+  saveStockViewPreferences,
+  STOCK_VIEW_MODE_OPTIONS,
+  StockTypeBadge,
+  type StockLotDisplayMeta,
+  type StockSortMode,
+  type StockViewPreferences,
+} from './stockVisuals';
 
 interface StockViewProps {
   locations: StorageLocation[];
   catalogItems: CatalogItem[];
   stockLots: StockLot[];
   shoppingItems: ShoppingItem[];
+  recipes?: Recipe[];
   expiryWarningDays: number;
   deviceId: string;
 }
 
 type StatusFilter = 'all' | 'expiring' | 'low' | 'leftovers';
+
+interface LocationGroup {
+  id: string;
+  name: string;
+  location?: StorageLocation;
+  items: StockLotDisplayMeta[];
+}
 
 function getStepForUnit(unit: Unit | null): number {
   switch (unit) {
@@ -62,11 +90,323 @@ function getStepForUnit(unit: Unit | null): number {
   }
 }
 
+function compareLotsByExpiryThenName(a: StockLot, b: StockLot): number {
+  if (a.expiresAt && b.expiresAt) {
+    const cmp = a.expiresAt.localeCompare(b.expiresAt);
+    if (cmp !== 0) return cmp;
+  } else if (a.expiresAt) {
+    return -1;
+  } else if (b.expiresAt) {
+    return 1;
+  }
+  return a.productLabel.localeCompare(b.productLabel, 'pt-PT');
+}
+
+function CardLotItem({
+  meta,
+  detailed,
+  onAdjustQuantity,
+  onSetQualitative,
+  onAddToShopping,
+  onEdit,
+  onDelete,
+}: {
+  meta: StockLotDisplayMeta;
+  detailed: boolean;
+  onAdjustQuantity: (lot: StockLot, delta: number) => void;
+  onSetQualitative: (lot: StockLot, level: QualitativeLevel) => void;
+  onAddToShopping: (cat: CatalogItem) => void;
+  onEdit: (lot: StockLot) => void;
+  onDelete: (lot: StockLot) => void;
+}) {
+  const {
+    lot,
+    catalogItem,
+    location,
+    visual,
+    isLowStock,
+    sourceRecipeTitle,
+    daysFrozenOrCooked,
+  } = meta;
+  const colors = LOCATION_COLOR_CLASSES[location?.colorToken ?? 'slate'];
+  const createdDate = lot.createdAt.slice(0, 10);
+  const updatedDate = lot.updatedAt.slice(0, 10);
+
+  return (
+    <div
+      className={`flex flex-col justify-between gap-2.5 rounded-2xl border border-slate-200 bg-white shadow-xs ${
+        detailed ? 'p-4' : 'p-3.5'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <StockTypeBadge visual={visual} size={detailed ? 'md' : 'sm'} />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${colors.badge}`}
+              >
+                {location?.locationType === 'freezer' && <Snowflake className="h-3 w-3" />}
+                {location?.name ?? 'Local'}
+              </span>
+              {lot.isLeftover && (
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-semibold text-purple-800">
+                  Sobra
+                </span>
+              )}
+              {isLowStock && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                  Stock baixo
+                </span>
+              )}
+              {detailed && catalogItem && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                  {CATALOG_CATEGORY_LABELS[catalogItem.category]} ·{' '}
+                  {SUPERMARKET_SECTION_LABELS[catalogItem.supermarketSection]}
+                </span>
+              )}
+            </div>
+            <h3 className="mt-1.5 font-semibold text-slate-900">{lot.productLabel}</h3>
+            {detailed && catalogItem && catalogItem.name !== lot.productLabel && (
+              <p className="text-xs text-slate-500">Genérico: {catalogItem.name}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          {catalogItem && (
+            <button
+              type="button"
+              onClick={() => onAddToShopping(catalogItem)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-teal-50 hover:text-teal-700"
+              title="Adicionar à Lista de Compras"
+              aria-label={`Adicionar ${lot.productLabel} à Lista de Compras`}
+            >
+              <ShoppingCart className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onEdit(lot)}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            title="Editar"
+            aria-label={`Editar ${lot.productLabel}`}
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(lot)}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+            title="Remover"
+            aria-label={`Remover ${lot.productLabel}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Metadata badges */}
+      {(detailed || lot.expiresAt || daysFrozenOrCooked !== null || lot.notes) && (
+        <div className="space-y-1.5 text-xs">
+          {(lot.expiresAt ||
+            daysFrozenOrCooked !== null ||
+            (detailed &&
+              (Boolean(sourceRecipeTitle) ||
+                (catalogItem !== undefined && catalogItem.minStockQty !== null)))) && (
+            <div className="flex flex-wrap gap-1.5">
+              <StockStatusBadges meta={meta} />
+              {detailed && sourceRecipeTitle && (
+                <span className="rounded-lg bg-purple-50 px-2 py-0.5 text-purple-800">
+                  Receita: {sourceRecipeTitle}
+                </span>
+              )}
+              {detailed && catalogItem && catalogItem.minStockQty !== null && (
+                <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-slate-600">
+                  Mín. catálogo: {catalogItem.minStockQty}{' '}
+                  {catalogItem.trackingMode === 'exact' ? catalogItem.defaultUnit : ''}
+                </span>
+              )}
+            </div>
+          )}
+
+          {lot.notes &&
+            (detailed ? (
+              <p className="whitespace-pre-wrap rounded-xl bg-slate-50 px-2.5 py-2 text-xs text-slate-600">
+                {lot.notes}
+              </p>
+            ) : (
+              <p className="line-clamp-1 text-slate-500">{lot.notes}</p>
+            ))}
+
+          {detailed && (
+            <p className="text-[11px] text-slate-400">
+              Atualizado em {formatDatePt(lot.updatedAt)}
+              {createdDate !== updatedDate ? ` · Criado em ${formatDatePt(lot.createdAt)}` : ''}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Quick +/- or qualitative toggle */}
+      <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+        <StockQuantityControls
+          meta={meta}
+          onAdjustQuantity={onAdjustQuantity}
+          onSetQualitative={onSetQualitative}
+          variant="card"
+        />
+      </div>
+    </div>
+  );
+}
+
+function LineLotRow({
+  meta,
+  onOpenQuick,
+  onAdjustQuantity,
+  onSetQualitative,
+}: {
+  meta: StockLotDisplayMeta;
+  onOpenQuick: (lotId: string) => void;
+  onAdjustQuantity: (lot: StockLot, delta: number) => void;
+  onSetQualitative: (lot: StockLot, level: QualitativeLevel) => void;
+}) {
+  const { lot, location, visual, expiry, isLowStock } = meta;
+  const colors = LOCATION_COLOR_CLASSES[location?.colorToken ?? 'slate'];
+
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 transition hover:bg-slate-50/70">
+      <button
+        type="button"
+        onClick={() => onOpenQuick(lot.id)}
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        aria-label={`Abrir ações rápidas para ${lot.productLabel}`}
+      >
+        <StockTypeBadge visual={visual} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${colors.dot}`} />
+            <span className="truncate text-sm font-semibold text-slate-900">
+              {lot.productLabel}
+            </span>
+            {lot.isLeftover && (
+              <span className="shrink-0 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800">
+                Sobra
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+            <span className="truncate">{location?.name ?? 'Local'}</span>
+            {expiry.status === 'expired' && (
+              <span className="font-semibold text-rose-700">
+                Expirou {formatDatePt(lot.expiresAt)}
+              </span>
+            )}
+            {expiry.status === 'expiring_soon' && (
+              <span className="font-semibold text-amber-700">
+                Expira {expiry.daysRemaining === 0 ? 'hoje' : `em ${expiry.daysRemaining}d`}
+              </span>
+            )}
+            {expiry.status === 'ok' && lot.expiresAt && (
+              <span>Val: {formatDatePt(lot.expiresAt)}</span>
+            )}
+            {isLowStock && <span className="font-semibold text-amber-700">Stock baixo</span>}
+          </div>
+        </div>
+      </button>
+
+      <StockQuantityControls
+        meta={meta}
+        onAdjustQuantity={onAdjustQuantity}
+        onSetQualitative={onSetQualitative}
+        variant="inline"
+      />
+    </div>
+  );
+}
+
+function GridLotTile({
+  meta,
+  onOpenQuick,
+}: {
+  meta: StockLotDisplayMeta;
+  onOpenQuick: (lotId: string) => void;
+}) {
+  const { lot, catalogItem, location, visual, expiry, isLowStock, quantityLabel } = meta;
+  const colors = LOCATION_COLOR_CLASSES[location?.colorToken ?? 'slate'];
+
+  const borderTone =
+    expiry.status === 'expired'
+      ? 'border-rose-300 bg-rose-50/40'
+      : expiry.status === 'expiring_soon'
+        ? 'border-amber-300 bg-amber-50/35'
+        : 'border-slate-200 bg-white';
+
+  const qualLevel = lot.qualitativeLevel ?? 'full';
+  const quantityTone =
+    catalogItem?.trackingMode === 'qualitative'
+      ? qualLevel === 'empty'
+        ? 'text-rose-700'
+        : qualLevel === 'low'
+          ? 'text-amber-700'
+          : 'text-teal-700'
+      : 'text-teal-800';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenQuick(lot.id)}
+      aria-label={`${lot.productLabel}, ${quantityLabel}, ${location?.name ?? 'Local'}`}
+      className={`flex min-h-[124px] flex-col justify-between rounded-2xl border p-2.5 text-center shadow-xs transition hover:border-teal-400 hover:shadow-sm ${borderTone}`}
+    >
+      <div className="flex w-full items-center justify-between gap-1">
+        <span className="inline-flex items-center gap-1" title={location?.name ?? 'Local'}>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${colors.dot}`} />
+          {location?.locationType === 'freezer' && (
+            <Snowflake className="h-3 w-3 text-blue-500" aria-hidden="true" />
+          )}
+        </span>
+
+        {expiry.status === 'expired' ? (
+          <span className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
+            Exp.
+          </span>
+        ) : expiry.status === 'expiring_soon' ? (
+          <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+            {expiry.daysRemaining === 0 ? 'Hoje' : `${expiry.daysRemaining}d`}
+          </span>
+        ) : isLowStock ? (
+          <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+            Baixo
+          </span>
+        ) : (
+          <span />
+        )}
+      </div>
+
+      <div className="my-1.5 flex justify-center">
+        <StockTypeBadge visual={visual} size="lg" />
+      </div>
+
+      <div className="w-full">
+        <p className="line-clamp-2 min-h-[2rem] text-xs font-semibold leading-tight text-slate-900">
+          {lot.productLabel}
+        </p>
+        <p className={`mt-1 truncate text-xs font-bold ${quantityTone}`}>
+          {quantityLabel || '—'}
+        </p>
+      </div>
+    </button>
+  );
+}
+
 export function StockView({
   locations,
   catalogItems,
   stockLots,
   shoppingItems,
+  recipes = [],
   expiryWarningDays,
   deviceId,
 }: StockViewProps) {
@@ -75,10 +415,22 @@ export function StockView({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
 
+  const [prefs, setPrefs] = useState<StockViewPreferences>(() => loadStockViewPreferences());
+  const [collapsedLocationIds, setCollapsedLocationIds] = useState<Set<string>>(() => new Set());
+
   const [lotModalOpen, setLotModalOpen] = useState(false);
   const [editingLot, setEditingLot] = useState<StockLot | null>(null);
+  const [quickLotId, setQuickLotId] = useState<string | null>(null);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+
+  const updatePrefs = (patch: Partial<StockViewPreferences>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveStockViewPreferences(next);
+      return next;
+    });
+  };
 
   const today = todayDateString();
   const catalogById = useMemo(
@@ -88,6 +440,10 @@ export function StockView({
   const locationsById = useMemo(
     () => new Map(locations.map((l) => [l.id, l])),
     [locations],
+  );
+  const recipesById = useMemo(
+    () => new Map(recipes.map((r) => [r.id, r])),
+    [recipes],
   );
 
   const lowStockSummaries = useMemo(() => {
@@ -135,11 +491,19 @@ export function StockView({
         return true;
       })
       .sort((a, b) => {
-        // Expiring soonest first
-        if (a.expiresAt && b.expiresAt) return a.expiresAt.localeCompare(b.expiresAt);
-        if (a.expiresAt) return -1;
-        if (b.expiresAt) return 1;
-        return a.productLabel.localeCompare(b.productLabel, 'pt-PT');
+        if (prefs.sortMode === 'name') {
+          const nameCmp = a.productLabel.localeCompare(b.productLabel, 'pt-PT');
+          return nameCmp !== 0 ? nameCmp : compareLotsByExpiryThenName(a, b);
+        }
+        if (prefs.sortMode === 'location') {
+          const locA = locationsById.get(a.locationId);
+          const locB = locationsById.get(b.locationId);
+          const orderDiff = (locA?.sortOrder ?? 999) - (locB?.sortOrder ?? 999);
+          if (orderDiff !== 0) return orderDiff;
+          const locNameCmp = (locA?.name ?? '').localeCompare(locB?.name ?? '', 'pt-PT');
+          if (locNameCmp !== 0) return locNameCmp;
+        }
+        return compareLotsByExpiryThenName(a, b);
       });
   }, [
     stockLots,
@@ -148,10 +512,81 @@ export function StockView({
     statusFilter,
     search,
     catalogById,
+    locationsById,
     expiryWarningDays,
     today,
     lowCatalogIds,
+    prefs.sortMode,
   ]);
+
+  const lotMetas = useMemo<StockLotDisplayMeta[]>(() => {
+    return filteredLots.map((lot) => {
+      const catalogItem = catalogById.get(lot.catalogItemId);
+      const location = locationsById.get(lot.locationId);
+      const visual = getStockTypeVisual(lot, catalogItem);
+      const expiry = getLotExpiryInfo(lot, expiryWarningDays, today);
+      const step = getStepForUnit(lot.unit);
+      const daysFrozenOrCooked = lot.frozenOrCookedAt
+        ? daysBetweenDateStrings(lot.frozenOrCookedAt, today)
+        : null;
+      const isLowStock = lowCatalogIds.has(lot.catalogItemId);
+      const sourceRecipeTitle = lot.sourceRecipeId
+        ? recipesById.get(lot.sourceRecipeId)?.title ?? null
+        : null;
+      const quantityLabel =
+        catalogItem?.trackingMode === 'qualitative'
+          ? QUALITATIVE_LABELS[lot.qualitativeLevel ?? 'full']
+          : formatQuantity(lot.quantity, lot.unit);
+
+      return {
+        lot,
+        catalogItem,
+        location,
+        visual,
+        expiry,
+        step,
+        daysFrozenOrCooked,
+        isLowStock,
+        sourceRecipeTitle,
+        quantityLabel,
+      };
+    });
+  }, [filteredLots, catalogById, locationsById, recipesById, expiryWarningDays, today, lowCatalogIds]);
+
+  const metaById = useMemo(
+    () => new Map(lotMetas.map((m) => [m.lot.id, m])),
+    [lotMetas],
+  );
+
+  const groupedSections = useMemo<LocationGroup[]>(() => {
+    if (!prefs.groupByLocation) return [];
+    const byLoc = new Map<string, StockLotDisplayMeta[]>();
+    for (const meta of lotMetas) {
+      const key = locationsById.has(meta.lot.locationId) ? meta.lot.locationId : '__unassigned__';
+      const bucket = byLoc.get(key);
+      if (bucket) {
+        bucket.push(meta);
+      } else {
+        byLoc.set(key, [meta]);
+      }
+    }
+
+    const sortedLocations = [...locations].sort((a, b) => a.sortOrder - b.sortOrder);
+    const groups: LocationGroup[] = [];
+    for (const loc of sortedLocations) {
+      const items = byLoc.get(loc.id);
+      if (items && items.length > 0) {
+        groups.push({ id: loc.id, name: loc.name, location: loc, items });
+      }
+    }
+    const unassigned = byLoc.get('__unassigned__');
+    if (unassigned && unassigned.length > 0) {
+      groups.push({ id: '__unassigned__', name: 'Sem localização', items: unassigned });
+    }
+    return groups;
+  }, [prefs.groupByLocation, lotMetas, locations, locationsById]);
+
+  const activeQuickMeta = quickLotId ? (metaById.get(quickLotId) ?? null) : null;
 
   const showToast = (msg: string) => {
     setFeedbackToast(msg);
@@ -222,6 +657,69 @@ export function StockView({
     );
     await db.shoppingItems.put(item);
     showToast(`${cat.name} adicionado à Lista de Compras.`);
+  };
+
+  const openEditLot = (lot: StockLot) => {
+    setEditingLot(lot);
+    setLotModalOpen(true);
+  };
+
+  const toggleGroupCollapsed = (groupId: string) => {
+    setCollapsedLocationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  const renderLotItems = (items: StockLotDisplayMeta[]) => {
+    if (prefs.viewMode === 'grid') {
+      return (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+          {items.map((meta) => (
+            <GridLotTile key={meta.lot.id} meta={meta} onOpenQuick={setQuickLotId} />
+          ))}
+        </div>
+      );
+    }
+
+    if (prefs.viewMode === 'line') {
+      return (
+        <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+          {items.map((meta) => (
+            <LineLotRow
+              key={meta.lot.id}
+              meta={meta}
+              onOpenQuick={setQuickLotId}
+              onAdjustQuantity={adjustQuantity}
+              onSetQualitative={setQualitative}
+            />
+          ))}
+        </div>
+      );
+    }
+
+    const isDetailed = prefs.viewMode === 'detailed';
+    return (
+      <div className={isDetailed ? 'grid gap-3 lg:grid-cols-2' : 'grid gap-2.5 sm:grid-cols-2'}>
+        {items.map((meta) => (
+          <CardLotItem
+            key={meta.lot.id}
+            meta={meta}
+            detailed={isDetailed}
+            onAdjustQuantity={adjustQuantity}
+            onSetQualitative={setQualitative}
+            onAddToShopping={addCatalogToShopping}
+            onEdit={openEditLot}
+            onDelete={deleteLot}
+          />
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -297,7 +795,7 @@ export function StockView({
         })}
       </div>
 
-      {/* Search + Status + Category */}
+      {/* Search + Category */}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="relative sm:col-span-2">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -313,6 +811,7 @@ export function StockView({
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value as CatalogCategory | 'all')}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-600"
+          aria-label="Filtrar por categoria"
         >
           <option value="all">Todas as categorias</option>
           {Object.entries(CATALOG_CATEGORY_LABELS).map(([k, label]) => (
@@ -323,6 +822,7 @@ export function StockView({
         </select>
       </div>
 
+      {/* Status filters */}
       <div className="flex flex-wrap gap-1.5">
         {(
           [
@@ -345,6 +845,71 @@ export function StockView({
             {label}
           </button>
         ))}
+      </div>
+
+      {/* Compact View Mode + Sort + Group Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-2.5 py-2 shadow-xs">
+        <div
+          className="inline-flex items-center gap-0.5 rounded-xl bg-slate-100 p-0.5"
+          role="group"
+          aria-label="Modo de visualização"
+        >
+          {STOCK_VIEW_MODE_OPTIONS.map(({ id, label, shortLabel, Icon }) => {
+            const active = prefs.viewMode === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => updatePrefs({ viewMode: id })}
+                aria-pressed={active}
+                aria-label={label}
+                title={label}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                  active
+                    ? 'bg-white text-teal-800 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">{shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex items-center">
+            <ArrowUpDown
+              className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400"
+              aria-hidden="true"
+            />
+            <select
+              value={prefs.sortMode}
+              onChange={(e) => updatePrefs({ sortMode: e.target.value as StockSortMode })}
+              aria-label="Ordenar stock"
+              className="rounded-xl border border-slate-200 bg-slate-50 py-1.5 pl-7 pr-2.5 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
+            >
+              <option value="expiry">Validade</option>
+              <option value="name">Nome A–Z</option>
+              <option value="location">Localização</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => updatePrefs({ groupByLocation: !prefs.groupByLocation })}
+            aria-pressed={prefs.groupByLocation}
+            title="Agrupar por localização"
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition ${
+              prefs.groupByLocation
+                ? 'border-teal-300 bg-teal-50 text-teal-900'
+                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <FolderTree className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Agrupar</span>
+          </button>
+        </div>
       </div>
 
       {/* Low stock items with zero active lots */}
@@ -375,7 +940,7 @@ export function StockView({
         )}
 
       {/* Lots list */}
-      {filteredLots.length === 0 ? (
+      {lotMetas.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
           <p className="text-sm font-medium text-slate-700">
             Nenhum item encontrado com estes filtros.
@@ -384,165 +949,54 @@ export function StockView({
             Clica em "Adicionar" para registar o que tens no frigorífico, congelador ou despensa.
           </p>
         </div>
-      ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          {filteredLots.map((lot) => {
-            const cat = catalogById.get(lot.catalogItemId);
-            const loc = locationsById.get(lot.locationId);
-            const colors = LOCATION_COLOR_CLASSES[loc?.colorToken ?? 'slate'];
-            const exp = getLotExpiryInfo(lot, expiryWarningDays, today);
-            const step = getStepForUnit(lot.unit);
-            const daysFrozenOrCooked = lot.frozenOrCookedAt
-              ? daysBetweenDateStrings(lot.frozenOrCookedAt, today)
-              : null;
-            const isLow = lowCatalogIds.has(lot.catalogItemId);
-
+      ) : prefs.groupByLocation ? (
+        <div className="space-y-4">
+          {groupedSections.map((group) => {
+            const colors = LOCATION_COLOR_CLASSES[group.location?.colorToken ?? 'slate'];
+            const collapsed = collapsedLocationIds.has(group.id);
             return (
-              <div
-                key={lot.id}
-                className="flex flex-col justify-between gap-2.5 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${colors.badge}`}
-                      >
-                        {loc?.locationType === 'freezer' && <Snowflake className="h-3 w-3" />}
-                        {loc?.name ?? 'Local'}
-                      </span>
-                      {lot.isLeftover && (
-                        <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-semibold text-purple-800">
-                          Sobra
-                        </span>
-                      )}
-                      {isLow && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                          Stock baixo
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="mt-1.5 font-semibold text-slate-900">{lot.productLabel}</h3>
-                    {cat && cat.name !== lot.productLabel && (
-                      <p className="text-xs text-slate-500">Genérico: {cat.name}</p>
+              <section key={group.id} className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => toggleGroupCollapsed(group.id)}
+                  aria-expanded={!collapsed}
+                  className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-xs transition hover:bg-slate-50"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${colors.dot}`} />
+                    {group.location?.locationType === 'freezer' && (
+                      <Snowflake className="h-3.5 w-3.5 text-blue-500" aria-hidden="true" />
                     )}
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    {cat && (
-                      <button
-                        type="button"
-                        onClick={() => addCatalogToShopping(cat)}
-                        className="rounded-lg p-1.5 text-slate-400 hover:bg-teal-50 hover:text-teal-700"
-                        title="Adicionar à Lista de Compras"
-                      >
-                        <ShoppingCart className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingLot(lot);
-                        setLotModalOpen(true);
-                      }}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                      title="Editar"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteLot(lot)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                      title="Remover"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Metadata badges */}
-                <div className="flex flex-wrap gap-1.5 text-xs">
-                  {exp.status === 'expired' && (
-                    <span className="rounded-lg bg-rose-100 px-2 py-0.5 font-semibold text-rose-800">
-                      Expirou em {formatDatePt(lot.expiresAt)}
+                    <span className="text-sm font-bold text-slate-900">{group.name}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {group.items.length}
                     </span>
-                  )}
-                  {exp.status === 'expiring_soon' && (
-                    <span className="rounded-lg bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
-                      Expira em{' '}
-                      {exp.daysRemaining === 0 ? 'hoje' : `${exp.daysRemaining}d`} (
-                      {formatDatePt(lot.expiresAt)})
-                    </span>
-                  )}
-                  {exp.status === 'ok' && lot.expiresAt && (
-                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-slate-600">
-                      Validade: {formatDatePt(lot.expiresAt)}
-                    </span>
-                  )}
-                  {daysFrozenOrCooked !== null && (
-                    <span className="rounded-lg bg-blue-50 px-2 py-0.5 text-blue-700">
-                      {loc?.locationType === 'freezer' ? 'Congelado' : 'Feito'} há{' '}
-                      {daysFrozenOrCooked}d ({formatDatePt(lot.frozenOrCookedAt)})
-                    </span>
-                  )}
-                  {lot.notes && <span className="text-slate-500">· {lot.notes}</span>}
-                </div>
-
-                {/* Quick +/- or qualitative toggle */}
-                <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                  {cat?.trackingMode === 'qualitative' ? (
-                    <div className="flex w-full gap-1.5">
-                      {(['full', 'low', 'empty'] as QualitativeLevel[]).map((lvl) => (
-                        <button
-                          key={lvl}
-                          type="button"
-                          onClick={() => setQualitative(lot, lvl)}
-                          className={`flex-1 rounded-lg py-1 text-xs font-semibold transition ${
-                            lot.qualitativeLevel === lvl
-                              ? lvl === 'empty'
-                                ? 'bg-rose-600 text-white'
-                                : lvl === 'low'
-                                  ? 'bg-amber-500 text-white'
-                                  : 'bg-teal-700 text-white'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          {QUALITATIVE_LABELS[lvl]}
-                        </button>
-                      ))}
-                    </div>
+                  </span>
+                  {collapsed ? (
+                    <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden="true" />
                   ) : (
-                    <>
-                      <span className="text-sm font-bold text-slate-900">
-                        {formatQuantity(lot.quantity, lot.unit)}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => adjustQuantity(lot, -step)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-                          aria-label={`Diminuir ${lot.productLabel}`}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => adjustQuantity(lot, step)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-                          aria-label={`Aumentar ${lot.productLabel}`}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </>
+                    <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
                   )}
-                </div>
-              </div>
+                </button>
+                {!collapsed && renderLotItems(group.items)}
+              </section>
             );
           })}
         </div>
+      ) : (
+        renderLotItems(lotMetas)
       )}
+
+      <StockQuickModal
+        open={activeQuickMeta !== null}
+        onClose={() => setQuickLotId(null)}
+        meta={activeQuickMeta}
+        onAdjustQuantity={adjustQuantity}
+        onSetQualitative={setQualitative}
+        onAddToShopping={addCatalogToShopping}
+        onEdit={openEditLot}
+        onDelete={deleteLot}
+      />
 
       <StockLotModal
         open={lotModalOpen}

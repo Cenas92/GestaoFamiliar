@@ -384,6 +384,7 @@ export function App() {
             catalogItems={data.catalogItems}
             stockLots={data.stockLots}
             shoppingItems={data.shoppingItems}
+            recipes={data.recipes}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
           />
