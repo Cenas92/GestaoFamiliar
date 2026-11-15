@@ -1,11 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowUpDown,
   BookOpen,
   ChevronDown,
   ChevronRight,
-  FolderTree,
   Pencil,
   Plus,
   Search,
@@ -15,6 +13,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { CollectionToolbar } from '../../components/CollectionToolbar';
 import {
   CATALOG_CATEGORY_LABELS,
   LOCATION_COLOR_CLASSES,
@@ -53,10 +52,9 @@ import {
   getStockTypeVisual,
   loadStockViewPreferences,
   saveStockViewPreferences,
-  STOCK_VIEW_MODE_OPTIONS,
+  STOCK_SORT_OPTIONS,
   StockTypeBadge,
   type StockLotDisplayMeta,
-  type StockSortMode,
   type StockViewPreferences,
 } from './stockVisuals';
 
@@ -589,7 +587,7 @@ export function StockView({
   );
 
   const groupedSections = useMemo<LocationGroup[]>(() => {
-    if (!prefs.groupByLocation) return [];
+    if (!prefs.groupEnabled) return [];
     const byLoc = new Map<string, StockLotDisplayMeta[]>();
     for (const meta of lotMetas) {
       const key = locationsById.has(meta.lot.locationId) ? meta.lot.locationId : '__unassigned__';
@@ -614,7 +612,7 @@ export function StockView({
       groups.push({ id: '__unassigned__', name: 'Sem localização', items: unassigned });
     }
     return groups;
-  }, [prefs.groupByLocation, lotMetas, locations, locationsById]);
+  }, [prefs.groupEnabled, lotMetas, locations, locationsById]);
 
   const activeQuickMeta = quickLotId ? (metaById.get(quickLotId) ?? null) : null;
 
@@ -937,69 +935,17 @@ export function StockView({
       )}
 
       {/* Thin single-row View Mode + Sort + Group toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div
-          className="inline-flex items-center gap-0.5 rounded-xl bg-slate-200/70 p-0.5"
-          role="group"
-          aria-label="Modo de visualização"
-        >
-          {STOCK_VIEW_MODE_OPTIONS.map(({ id, label, shortLabel, Icon }) => {
-            const active = prefs.viewMode === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => updatePrefs({ viewMode: id })}
-                aria-pressed={active}
-                aria-label={label}
-                title={label}
-                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition ${
-                  active
-                    ? 'bg-white text-teal-800 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">{shortLabel}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <div className="relative flex items-center">
-            <ArrowUpDown
-              className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-400"
-              aria-hidden="true"
-            />
-            <select
-              value={prefs.sortMode}
-              onChange={(e) => updatePrefs({ sortMode: e.target.value as StockSortMode })}
-              aria-label="Ordenar stock"
-              className="rounded-lg border border-slate-200 bg-white py-1 pl-6 pr-2 text-xs font-medium text-slate-700 outline-none focus:border-teal-600"
-            >
-              <option value="expiry">Validade</option>
-              <option value="name">Nome A–Z</option>
-              <option value="location">Localização</option>
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => updatePrefs({ groupByLocation: !prefs.groupByLocation })}
-            aria-pressed={prefs.groupByLocation}
-            title="Agrupar por localização"
-            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition ${
-              prefs.groupByLocation
-                ? 'border-teal-300 bg-teal-50 text-teal-900'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            <FolderTree className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Agrupar</span>
-          </button>
-        </div>
-      </div>
+      <CollectionToolbar
+        viewMode={prefs.viewMode}
+        onChangeViewMode={(viewMode) => updatePrefs({ viewMode })}
+        sortMode={prefs.sortMode}
+        sortOptions={STOCK_SORT_OPTIONS}
+        sortAriaLabel="Ordenar stock"
+        onChangeSortMode={(sortMode) => updatePrefs({ sortMode })}
+        groupActive={prefs.groupEnabled}
+        groupTitle="Agrupar por localização"
+        onToggleGroup={() => updatePrefs({ groupEnabled: !prefs.groupEnabled })}
+      />
 
       {/* Low stock items with zero active lots */}
       {statusFilter === 'low' &&
@@ -1038,7 +984,7 @@ export function StockView({
             Clica em "Adicionar" para registar o que tens no frigorífico, congelador ou despensa.
           </p>
         </div>
-      ) : prefs.groupByLocation ? (
+      ) : prefs.groupEnabled ? (
         <div className="space-y-4">
           {groupedSections.map((group) => {
             const colors = LOCATION_COLOR_CLASSES[group.location?.colorToken ?? 'slate'];
