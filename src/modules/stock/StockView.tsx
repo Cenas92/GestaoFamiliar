@@ -29,13 +29,13 @@ import type {
   ShoppingItem,
   StockLot,
   StorageLocation,
-  Unit,
 } from '../../types/domain';
 import { nowIso } from '../../utils/id';
 import {
   daysBetweenDateStrings,
   formatDatePt,
   formatQuantity,
+  getStepForUnit,
   normalizeText,
   todayDateString,
 } from '../../utils/units';
@@ -89,19 +89,6 @@ interface LocationGroup {
   name: string;
   location?: StorageLocation;
   items: StockLotDisplayMeta[];
-}
-
-function getStepForUnit(unit: Unit | null): number {
-  switch (unit) {
-    case 'g':
-    case 'ml':
-      return 100;
-    case 'kg':
-    case 'L':
-      return 0.5;
-    default:
-      return 1;
-  }
 }
 
 function compareLotsByExpiryThenName(a: StockLot, b: StockLot): number {

@@ -135,3 +135,16 @@ export function formatWeekdayShortPt(dateStr: string): string {
   const names = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   return names[dt.getUTCDay()];
 }
+
+export function getStepForUnit(unit: Unit | null): number {
+  switch (unit) {
+    case 'g':
+    case 'ml':
+      return 100;
+    case 'kg':
+    case 'L':
+      return 0.5;
+    default:
+      return 1;
+  }
+}
