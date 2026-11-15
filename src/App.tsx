@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   CalendarDays,
@@ -18,6 +18,7 @@ import { APP_INFO } from './appInfo';
 import { useFamilyData } from './hooks/useFamilyData';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { PlannerView } from './modules/planner/PlannerView';
+import { evaluateRecipeMatch } from './modules/recipes/matchingEngine';
 import { RecipesView } from './modules/recipes/RecipesView';
 import { SettingsView } from './modules/settings/SettingsView';
 import { ShoppingView } from './modules/shopping/ShoppingView';
@@ -26,6 +27,12 @@ import { TodayView } from './modules/today/TodayView';
 import { checkForPwaUpdate } from './pwaUpdate';
 import { useAutoSync } from './sync/useAutoSync';
 import type { AppTab } from './types/domain';
+import {
+  addDaysToDateString,
+  formatDatePt,
+  getWeekStartMonday,
+  todayDateString,
+} from './utils/units';
 
 const HASH_TO_TAB: Record<string, AppTab> = {
   '#today': 'today',
@@ -43,6 +50,7 @@ function readInitialTab(): AppTab {
 export function App() {
   const data = useFamilyData();
   const [activeTab, setActiveTab] = useState<AppTab>(readInitialTab);
+  const [plannerWeekStart, setPlannerWeekStart] = useState(() => getWeekStartMonday());
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
   const [dismissedAuthBanner, setDismissedAuthBanner] = useState(false);
@@ -130,6 +138,35 @@ export function App() {
     }
   };
 
+  const today = todayDateString();
+  const readyRecipesCount = useMemo(() => {
+    if (!data.ready || !data.settings || activeTab !== 'recipes') return 0;
+    const expiryWarningDays = data.settings.expiryWarningDays;
+    return data.recipes.filter(
+      (r) =>
+        evaluateRecipeMatch(
+          r,
+          r.baseServings,
+          data.stockLots,
+          data.catalogItems,
+          data.locations,
+          data.members,
+          expiryWarningDays,
+          today,
+        ).status === 'ready',
+    ).length;
+  }, [
+    data.ready,
+    data.settings,
+    data.recipes,
+    data.stockLots,
+    data.catalogItems,
+    data.locations,
+    data.members,
+    activeTab,
+    today,
+  ]);
+
   if (!data.ready || !data.settings) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-slate-50 text-sm font-medium text-slate-600">
@@ -139,6 +176,68 @@ export function App() {
   }
 
   const pendingShoppingCount = data.shoppingItems.filter((s) => !s.checked).length;
+  const checkedShoppingCount = data.shoppingItems.length - pendingShoppingCount;
+
+  const headerMeta = (() => {
+    switch (activeTab) {
+      case 'today':
+        return {
+          title: 'Hoje em Casa',
+          subtitle: formatDatePt(today),
+          Icon: Home,
+          badgeClass: 'bg-teal-100 text-teal-700',
+        };
+      case 'stock': {
+        const count = data.stockLots.length;
+        return {
+          title: 'Stock da Casa',
+          subtitle: `${count} ${count === 1 ? 'produto em casa' : 'produtos em casa'}`,
+          Icon: Package,
+          badgeClass: 'bg-cyan-100 text-cyan-700',
+        };
+      }
+      case 'recipes': {
+        const count = data.recipes.length;
+        return {
+          title: 'As Nossas Receitas',
+          subtitle: `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
+            readyRecipesCount === 1 ? 'pronta' : 'prontas'
+          }`,
+          Icon: ChefHat,
+          badgeClass: 'bg-amber-100 text-amber-700',
+        };
+      }
+      case 'planner': {
+        const weekEnd = addDaysToDateString(plannerWeekStart, 6);
+        return {
+          title: 'Ementa Semanal',
+          subtitle: `${formatDatePt(plannerWeekStart)} a ${formatDatePt(weekEnd)}`,
+          Icon: CalendarDays,
+          badgeClass: 'bg-indigo-100 text-indigo-700',
+        };
+      }
+      case 'shopping':
+        return {
+          title: 'Lista de Compras',
+          subtitle:
+            checkedShoppingCount > 0
+              ? `${pendingShoppingCount} por comprar · ${checkedShoppingCount} no carrinho`
+              : `${pendingShoppingCount} ${
+                  pendingShoppingCount === 1 ? 'item por comprar' : 'itens por comprar'
+                }`,
+          Icon: ShoppingCart,
+          badgeClass: 'bg-emerald-100 text-emerald-700',
+        };
+      case 'settings':
+        return {
+          title: 'Definições e Família',
+          subtitle: 'Família, locais, catálogo e sincronização',
+          Icon: Settings,
+          badgeClass: 'bg-slate-200 text-slate-700',
+        };
+    }
+  })();
+  const HeaderIcon = headerMeta.Icon;
 
   const navItems: { id: AppTab; label: string; icon: typeof Home; badge?: number }[] = [
     { id: 'today', label: 'Hoje', icon: Home },
@@ -155,21 +254,23 @@ export function App() {
 
   return (
     <div className="min-h-dvh bg-slate-50 pb-24 sm:pb-8">
-      {/* Top Bar */}
+      {/* Dynamic Top Bar */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => navigate('today')}
-            className="flex items-center gap-2 text-left"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-700 text-sm font-black text-white">
-              GF
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5 text-left">
+            <span
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${headerMeta.badgeClass}`}
+              aria-hidden="true"
+            >
+              <HeaderIcon className="h-4 w-4" />
             </span>
-            <span className="text-sm font-bold leading-tight text-slate-900">
-              Gestão Familiar
-            </span>
-          </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold leading-tight text-slate-900">
+                {headerMeta.title}
+              </h1>
+              <p className="truncate text-[11px] text-slate-500">{headerMeta.subtitle}</p>
+            </div>
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden items-center gap-1 sm:flex" aria-label="Navegação principal">
@@ -402,6 +503,8 @@ export function App() {
             shoppingItems={data.shoppingItems}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
+            weekStart={plannerWeekStart}
+            onWeekStartChange={setPlannerWeekStart}
           />
         )}
 

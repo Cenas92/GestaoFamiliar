@@ -503,10 +503,6 @@ export function RecipesView({
     return groups;
   }, [prefs.groupEnabled, evaluated]);
 
-  const readyTotalCount = useMemo(
-    () => evaluatedAll.filter((e) => e.status === 'ready').length,
-    [evaluatedAll],
-  );
   const humanMembers = useMemo(() => members.filter((m) => m.role !== 'pet'), [members]);
   const activeFiltersCount =
     (categoryFilter !== 'all' ? 1 : 0) +
@@ -563,17 +559,27 @@ export function RecipesView({
 
   return (
     <div className="space-y-2.5">
-      {/* Compact single-row header */}
+      {/* First row: horizontal match status pills + Nova Receita button (no duplicate heading) */}
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold leading-tight text-slate-900 sm:text-xl">
-            As Nossas Receitas
-          </h1>
-          <p className="truncate text-[11px] text-slate-500">
-            {recipes.length} {recipes.length === 1 ? 'receita' : 'receitas'} · {readyTotalCount}{' '}
-            {readyTotalCount === 1 ? 'pronta' : 'prontas'} agora
-          </p>
+        <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+          {MATCH_FILTER_OPTIONS.filter(
+            ([key]) => key === 'all' || matchCounts[key] > 0 || matchFilter === key,
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setMatchFilter(key)}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                matchFilter === key
+                  ? 'border-teal-700 bg-teal-700 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {label} ({matchCounts[key]})
+            </button>
+          ))}
         </div>
+
         <button
           type="button"
           onClick={() => {
@@ -583,28 +589,10 @@ export function RecipesView({
           className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-teal-700 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-teal-800 sm:px-3"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-          Nova Receita
+          <span>
+            Nova<span className="hidden sm:inline"> Receita</span>
+          </span>
         </button>
-      </div>
-
-      {/* Horizontal match status pills (no scrollbar, omits 0-count secondary pills) */}
-      <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-        {MATCH_FILTER_OPTIONS.filter(
-          ([key]) => key === 'all' || matchCounts[key] > 0 || matchFilter === key,
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setMatchFilter(key)}
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-              matchFilter === key
-                ? 'border-teal-700 bg-teal-700 text-white'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            {label} ({matchCounts[key]})
-          </button>
-        ))}
       </div>
 
       {/* Search + Collapsible Filters & View toggle */}

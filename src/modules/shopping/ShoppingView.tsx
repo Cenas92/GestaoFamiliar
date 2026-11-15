@@ -756,17 +756,56 @@ export function ShoppingView({
 
   return (
     <div className="space-y-2.5">
-      {/* Compact single-row header */}
+      {/* First row: status strip + Arrumar / Adicionar controls (no duplicate heading) */}
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold leading-tight text-slate-900 sm:text-xl">
-            Lista de Compras
-          </h1>
-          <p className="truncate text-[11px] text-slate-500">
-            {checkedItems.length > 0
-              ? `${uncheckedCount} por comprar · ${checkedItems.length} no carrinho`
-              : `${uncheckedCount} ${uncheckedCount === 1 ? 'item por comprar' : 'itens por comprar'}`}
-          </p>
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+              statusFilter === 'all'
+                ? 'border-slate-900 bg-slate-900 text-white'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Todos ({shoppingItems.length})
+          </button>
+          {(uncheckedCount > 0 || statusFilter === 'unchecked') && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter('unchecked')}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                statusFilter === 'unchecked'
+                  ? 'border-teal-700 bg-teal-700 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              Por comprar ({uncheckedCount})
+            </button>
+          )}
+          {(checkedItems.length > 0 || statusFilter === 'checked') && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter('checked')}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                statusFilter === 'checked'
+                  ? 'border-teal-700 bg-teal-700 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              No carrinho ({checkedItems.length})
+            </button>
+          )}
+          {lowStockMissing.length > 0 && (
+            <button
+              type="button"
+              onClick={handleImportLowStock}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+              Repor em falta ({lowStockMissing.length})
+            </button>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
@@ -801,57 +840,6 @@ export function ShoppingView({
           {toast}
         </div>
       )}
-
-      {/* Clean horizontal strip: Status + optional Import Low Stock */}
-      <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setStatusFilter('all')}
-          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-            statusFilter === 'all'
-              ? 'border-slate-900 bg-slate-900 text-white'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          Todos ({shoppingItems.length})
-        </button>
-        {(uncheckedCount > 0 || statusFilter === 'unchecked') && (
-          <button
-            type="button"
-            onClick={() => setStatusFilter('unchecked')}
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-              statusFilter === 'unchecked'
-                ? 'border-teal-700 bg-teal-700 text-white'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Por comprar ({uncheckedCount})
-          </button>
-        )}
-        {(checkedItems.length > 0 || statusFilter === 'checked') && (
-          <button
-            type="button"
-            onClick={() => setStatusFilter('checked')}
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-              statusFilter === 'checked'
-                ? 'border-teal-700 bg-teal-700 text-white'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            No carrinho ({checkedItems.length})
-          </button>
-        )}
-        {lowStockMissing.length > 0 && (
-          <button
-            type="button"
-            onClick={handleImportLowStock}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-          >
-            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-            Repor em falta ({lowStockMissing.length})
-          </button>
-        )}
-      </div>
 
       {/* Collapsible Quick Add form (collapsed on mobile by default, open on PC) */}
       {addFormOpen && (

@@ -171,7 +171,8 @@ describe('StockView view modes, symbols, sorting and grouping', () => {
       />,
     );
 
-    expect(screen.getByText('3 produtos em casa')).toBeInTheDocument();
+    expect(screen.getByText('Todos (3)')).toBeInTheDocument();
+    expect(screen.queryByText('Stock da Casa')).not.toBeInTheDocument();
     expect(screen.queryByText(/abaixo do mín\./i)).not.toBeInTheDocument();
 
     const lineBtn = screen.getByRole('button', { name: 'Lista compacta em linha' });

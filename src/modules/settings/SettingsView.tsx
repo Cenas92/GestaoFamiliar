@@ -504,14 +504,7 @@ export function SettingsView({
   };
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">Definições e Família</h1>
-        <p className="text-xs text-slate-500">
-          Perfis do agregado, locais de armazenamento, backups e sincronização Google Drive
-        </p>
-      </div>
-
+    <div className="space-y-3.5">
       {statusMsg && (
         <div className="rounded-xl bg-teal-900 px-3.5 py-2.5 text-xs font-medium text-white">
           {statusMsg}

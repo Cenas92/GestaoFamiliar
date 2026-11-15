@@ -7,8 +7,9 @@ Este ficheiro guarda as preferências permanentes de produto, interface e fluxo 
 - **Entrevistar sempre em janela popup (`ask_question`)**: sempre que o utilizador pedir uma funcionalidade nova, uma alteração de interface, ou quando houver perguntas/opções em aberto (desenho, densidade, ícones, fluxo ou prioridades — incluindo ao apresentar propostas de melhoria), utilizar **sempre** a ferramenta `ask_question` em vez de listar perguntas em texto no chat. Só escrever perguntas em texto quando for uma única confirmação simples de sim/não. Não escrever código com escolhas de interface em aberto antes de concluir esta entrevista.
 
 ## Padrões de Interface Mobile-First
-- **Cabeçalho global e linguagem limpa**:
-  - Não mostrar subtitulo técnico (`vX.X.X`) na barra global de topo (reservar informação de versão para **Definições → Acerca**).
+- **Cabeçalho global dinâmico e linguagem limpa**:
+  - Mostrar na barra global de topo o ícone colorido da aba ativa, o título do ecrã (`<h1>`) e o subtítulo contextual por baixo (sem logotipo `GF` nem subtítulo técnico `vX.X.X`, reservando a versão para **Definições → Acerca**).
+  - Não repetir título nem subtítulo dentro do corpo da página; colocar os botões de ação principal (ex.: `⋯`, `+ Adicionar`, `+ Nova Receita`, `Em falta`) na primeira linha do conteúdo ao lado das pills/atalhos.
   - Evitar linguagem técnica/de armazém nos ecrãs diários (ex.: sem "abaixo do mín." nos cabeçalhos do Stock) e evitar atalhos ou botões de sincronização duplicados na aba **Hoje**.
   - Em **Stock**, manter `+ Adicionar` como ação principal e arrumar **Catálogo** e atalhos secundários num menu discreto `⋯` (e em **Definições**).
 - **Cabeçalho de secção em linha única**: colocar título e contador compacto à esquerda (com singular/plural correto) e botões de ação compactos à direita na mesma linha (`flex-nowrap` / `shrink-0`) para não desperdiçar espaço vertical no telemóvel.

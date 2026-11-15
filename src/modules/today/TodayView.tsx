@@ -11,7 +11,7 @@ import type {
   StockLot,
   StorageLocation,
 } from '../../types/domain';
-import { formatDatePt, formatQuantity, todayDateString } from '../../utils/units';
+import { formatQuantity, todayDateString } from '../../utils/units';
 import { getTomorrowDefrostReminders } from '../planner/plannerService';
 import { evaluateRecipeMatch } from '../recipes/matchingEngine';
 import { getLotExpiryInfo } from '../stock/stockService';
@@ -97,12 +97,6 @@ export function TodayView({
 
   return (
     <div className="space-y-3.5">
-      {/* Calm Header */}
-      <div>
-        <h1 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">Hoje em Casa</h1>
-        <p className="text-xs text-slate-500">{formatDatePt(today)}</p>
-      </div>
-
       {/* Defrost reminder for tomorrow */}
       {defrostReminders.length > 0 && (
         <section className="overflow-hidden rounded-2xl border border-blue-200 bg-blue-50/70">

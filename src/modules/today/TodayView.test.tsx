@@ -179,7 +179,7 @@ describe('TodayView calm summary', () => {
       />,
     );
 
-    expect(screen.getByText('Hoje em Casa')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hoje em Casa' })).not.toBeInTheDocument();
     expect(screen.getByText('Validades a verificar (1)')).toBeInTheDocument();
     expect(screen.getByText('Ovos Caseiros')).toBeInTheDocument();
     expect(screen.getByText('Ementa de Hoje')).toBeInTheDocument();

@@ -733,16 +733,42 @@ export function StockView({
 
   return (
     <div className="space-y-2.5">
-      {/* Compact single-row header */}
+      {/* First row: scrollable location pills + primary actions (no duplicate heading) */}
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold leading-tight text-slate-900 sm:text-xl">
-            Stock da Casa
-          </h1>
-          <p className="truncate text-[11px] text-slate-500">
-            {stockLots.length} {stockLots.length === 1 ? 'produto em casa' : 'produtos em casa'}
-          </p>
+        <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setSelectedLocationId('all')}
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+              selectedLocationId === 'all'
+                ? 'border-slate-900 bg-slate-900 text-white'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Todos ({stockLots.length})
+          </button>
+          {visibleLocations.map((loc) => {
+            const colors = LOCATION_COLOR_CLASSES[loc.colorToken];
+            const count = locationCounts.get(loc.id) ?? 0;
+            const active = selectedLocationId === loc.id;
+            return (
+              <button
+                key={loc.id}
+                type="button"
+                onClick={() => setSelectedLocationId(loc.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                  active
+                    ? `${colors.badge} ring-1 ring-slate-300`
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
+                {loc.name} ({count})
+              </button>
+            );
+          })}
         </div>
+
         <div className="flex shrink-0 items-center gap-1.5">
           <div className="relative">
             <button
@@ -826,41 +852,6 @@ export function StockView({
           {feedbackToast}
         </div>
       )}
-
-      {/* Location pills (hides empty 0-count locations and scrollbar) */}
-      <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setSelectedLocationId('all')}
-          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-            selectedLocationId === 'all'
-              ? 'border-slate-900 bg-slate-900 text-white'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          Todos ({stockLots.length})
-        </button>
-        {visibleLocations.map((loc) => {
-          const colors = LOCATION_COLOR_CLASSES[loc.colorToken];
-          const count = locationCounts.get(loc.id) ?? 0;
-          const active = selectedLocationId === loc.id;
-          return (
-            <button
-              key={loc.id}
-              type="button"
-              onClick={() => setSelectedLocationId(loc.id)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-                active
-                  ? `${colors.badge} ring-1 ring-slate-300`
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
-              {loc.name} ({count})
-            </button>
-          );
-        })}
-      </div>
 
       {/* Search + Collapsible Filters toggle */}
       <div className="flex items-center gap-1.5">
