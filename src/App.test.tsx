@@ -37,5 +37,13 @@ describe('App integration', () => {
     await waitFor(() => {
       expect(screen.getByText('Lista de Compras')).toBeInTheDocument();
     });
+
+    const settingsButton = screen.getByRole('button', { name: /Definições e Família/i });
+    fireEvent.click(settingsButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Acerca')).toBeInTheDocument();
+      expect(screen.getByText('AI-Cenas92')).toBeInTheDocument();
+    });
   });
 });

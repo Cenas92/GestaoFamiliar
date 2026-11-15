@@ -73,8 +73,16 @@ export function useAutoSync(settings: AppSettings | undefined) {
     if (!navigator.onLine) return;
 
     const everLinked =
-      localStorage.getItem(LINKED_FLAG_KEY) === '1' || hasValidCachedGoogleToken();
-    if (!everLinked) return;
+      Boolean(current.lastSyncAt) ||
+      localStorage.getItem(LINKED_FLAG_KEY) === '1' ||
+      hasValidCachedGoogleToken();
+    if (!everLinked) {
+      setPhase('needs_auth');
+      return;
+    }
+    if (current.lastSyncAt) {
+      markGoogleSyncLinked();
+    }
 
     lastAutoAttemptRef.current = Date.now();
     setPhase('syncing');

@@ -2,9 +2,11 @@ import { useState } from 'react';
 import {
   Cloud,
   Download,
+  ExternalLink,
   FolderOpen,
   FolderPlus,
   HelpCircle,
+  Info,
   MapPin,
   Plus,
   RefreshCw,
@@ -12,6 +14,7 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+import { APP_INFO } from '../../appInfo';
 import {
   COMMON_ALLERGENS,
   HOUSEHOLD_ROLE_LABELS,
@@ -19,6 +22,7 @@ import {
   LOCATION_TYPE_LABELS,
 } from '../../constants/labels';
 import { db } from '../../db/database';
+import { checkForPwaUpdate } from '../../pwaUpdate';
 import {
   clearCachedGoogleToken,
   ensureGoogleAccessToken,
@@ -83,6 +87,27 @@ export function SettingsView({
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateMsg(null);
+    try {
+      const result = await checkForPwaUpdate();
+      if (result === 'updated') {
+        setUpdateMsg('Nova versão encontrada! A app vai atualizar em instantes…');
+      } else if (result === 'up-to-date') {
+        setUpdateMsg(`Já estás na versão mais recente (v${APP_INFO.version}).`);
+      } else if (result === 'offline') {
+        setUpdateMsg('Sem ligação à internet para verificar atualizações.');
+      } else {
+        setUpdateMsg('Atualizações automáticas indisponíveis neste modo de execução.');
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const flashSuccess = (msg: string) => {
     setErrorMsg(null);
@@ -684,6 +709,67 @@ export function SettingsView({
             />
           </label>
         </div>
+      </section>
+
+      {/* About / Acerca */}
+      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-teal-700" />
+            <h2 className="text-sm font-bold text-slate-900">Acerca</h2>
+          </div>
+          <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-bold text-teal-800">
+            v{APP_INFO.version}
+          </span>
+        </div>
+
+        <dl className="grid grid-cols-1 gap-2 rounded-xl bg-slate-50 p-3 text-xs sm:grid-cols-3">
+          <div>
+            <dt className="text-[11px] font-medium text-slate-500">Aplicação</dt>
+            <dd className="font-semibold text-slate-900">{APP_INFO.name}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-medium text-slate-500">Criador</dt>
+            <dd className="font-semibold text-slate-900">{APP_INFO.creator}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-medium text-slate-500">Versão</dt>
+            <dd className="font-semibold text-slate-900">
+              v{APP_INFO.version}
+              {APP_INFO.buildDate
+                ? ` · ${new Date(APP_INFO.buildDate).toLocaleDateString('pt-PT')}`
+                : ''}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            disabled={checkingUpdate}
+            onClick={handleCheckUpdate}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 text-teal-700 ${checkingUpdate ? 'animate-spin' : ''}`} />
+            {checkingUpdate ? 'A verificar…' : 'Procurar atualização'}
+          </button>
+
+          <a
+            href={APP_INFO.repoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline"
+          >
+            GitHub
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+
+        {updateMsg && (
+          <p className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700">
+            {updateMsg}
+          </p>
+        )}
       </section>
     </div>
   );

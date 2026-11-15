@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowDown,
   CalendarDays,
   ChefHat,
   Check,
@@ -11,14 +12,18 @@ import {
   Settings,
   ShoppingCart,
   WifiOff,
+  X,
 } from 'lucide-react';
+import { APP_INFO } from './appInfo';
 import { useFamilyData } from './hooks/useFamilyData';
+import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { PlannerView } from './modules/planner/PlannerView';
 import { RecipesView } from './modules/recipes/RecipesView';
 import { SettingsView } from './modules/settings/SettingsView';
 import { ShoppingView } from './modules/shopping/ShoppingView';
 import { StockView } from './modules/stock/StockView';
 import { TodayView } from './modules/today/TodayView';
+import { checkForPwaUpdate } from './pwaUpdate';
 import { useAutoSync } from './sync/useAutoSync';
 import type { AppTab } from './types/domain';
 
@@ -41,8 +46,51 @@ export function App() {
   const [openRecipeCreate, setOpenRecipeCreate] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
+  const [dismissedAuthBanner, setDismissedAuthBanner] = useState(false);
 
   const autoSync = useAutoSync(data.settings);
+
+  useEffect(() => {
+    if (autoSync.phase === 'ok') {
+      setDismissedAuthBanner(false);
+    }
+  }, [autoSync.phase]);
+
+  const handlePullRefresh = async () => {
+    setHeaderNotice(null);
+    // Start Drive sync synchronously while user gesture is still active
+    const syncPromise =
+      navigator.onLine && autoSync.isConfigured ? autoSync.triggerManualSync() : null;
+    const pwaResult = await checkForPwaUpdate();
+
+    if (pwaResult === 'updated') {
+      setHeaderNotice({ text: 'Nova versão encontrada! A atualizar…', isError: false });
+    }
+
+    if (syncPromise) {
+      try {
+        const summary = await syncPromise;
+        setHeaderNotice({ text: summary, isError: false });
+        setTimeout(() => setHeaderNotice(null), 3500);
+      } catch (err) {
+        setHeaderNotice({
+          text: err instanceof Error ? err.message : 'Erro ao sincronizar.',
+          isError: true,
+        });
+      }
+    } else if (pwaResult !== 'updated') {
+      setHeaderNotice({
+        text:
+          pwaResult === 'offline'
+            ? 'Sem ligação à internet (modo offline).'
+            : `App atualizada (v${APP_INFO.version}).`,
+        isError: false,
+      });
+      setTimeout(() => setHeaderNotice(null), 2500);
+    }
+  };
+
+  const pullState = usePullToRefresh(handlePullRefresh);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -123,7 +171,9 @@ export function App() {
               <span className="block text-sm font-bold leading-tight text-slate-900">
                 Gestão Familiar
               </span>
-              <span className="block text-[11px] text-slate-500">Casa, Stock &amp; Receitas</span>
+              <span className="block text-[11px] text-slate-500">
+                Casa, Stock &amp; Receitas · v{APP_INFO.version}
+              </span>
             </div>
           </button>
 
@@ -224,6 +274,31 @@ export function App() {
           </div>
         </div>
 
+        {isOnline &&
+          autoSync.isConfigured &&
+          autoSync.phase === 'needs_auth' &&
+          !dismissedAuthBanner &&
+          !headerNotice && (
+            <div className="flex items-center justify-center gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-900">
+              <button
+                type="button"
+                onClick={handleHeaderSyncClick}
+                className="inline-flex items-center gap-1.5 text-left underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
+              >
+                <CloudAlert className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+                <span>Sessão Google por atualizar — toca aqui para sincronizar a conta.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedAuthBanner(true)}
+                aria-label="Fechar aviso"
+                className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
         {headerNotice && (
           <div
             className={`border-t px-4 py-2 text-center text-xs font-medium ${
@@ -245,6 +320,42 @@ export function App() {
           </div>
         )}
       </header>
+
+      {/* Pull-to-refresh indicator */}
+      {(pullState.pullDistance > 0 || pullState.isRefreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden bg-slate-100/80 transition-[height] duration-150"
+          style={{
+            height: pullState.isRefreshing ? 44 : Math.max(28, Math.round(pullState.pullDistance)),
+          }}
+          aria-live="polite"
+        >
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold shadow-xs ${
+              pullState.isRefreshing || pullState.isReadyToRelease
+                ? 'bg-teal-700 text-white'
+                : 'bg-white text-slate-600'
+            }`}
+          >
+            {pullState.isRefreshing ? (
+              <>
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <span>A atualizar…</span>
+              </>
+            ) : pullState.isReadyToRelease ? (
+              <>
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Larga para atualizar</span>
+              </>
+            ) : (
+              <>
+                <ArrowDown className="h-3.5 w-3.5" />
+                <span>Arrasta para atualizar</span>
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="mx-auto max-w-5xl px-4 py-4 sm:py-6">
