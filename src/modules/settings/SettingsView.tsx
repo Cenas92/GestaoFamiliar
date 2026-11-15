@@ -24,8 +24,10 @@ import {
   ensureGoogleAccessToken,
   findOrCreateAppRootFolder,
   pickSharedFolderWithPicker,
+  sanitizeGoogleClientId,
 } from '../../sync/googleDriveSync';
 import { exportManualBackupJson, importManualBackupJson } from '../../sync/syncService';
+import { clearGoogleSyncLinked, markGoogleSyncLinked } from '../../sync/useAutoSync';
 import type {
   AppSettings,
   HouseholdMember,
@@ -40,7 +42,7 @@ interface SettingsViewProps {
   settings: AppSettings;
   members: HouseholdMember[];
   locations: StorageLocation[];
-  onSyncNow: () => Promise<void>;
+  onSyncNow: () => Promise<string>;
 }
 
 const COLOR_OPTIONS: LocationColorToken[] = [
@@ -95,26 +97,32 @@ export function SettingsView({
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedDays = Math.max(1, Math.min(60, Number(warningDays) || 5));
+    const cleanClientId = sanitizeGoogleClientId(clientId);
+    setClientId(cleanClientId);
     localStorage.setItem('gf_google_picker_key', pickerApiKey.trim());
     await db.settings.update('singleton', {
       expiryWarningDays: parsedDays,
-      googleClientId: clientId.trim(),
+      googleClientId: cleanClientId,
     });
     flashSuccess('Definições guardadas localmente.');
   };
 
   const handleCreateOrFindFolder = async () => {
+    const cleanClientId = sanitizeGoogleClientId(clientId);
+    setClientId(cleanClientId);
     setBusy(true);
     try {
-      await db.settings.update('singleton', { googleClientId: clientId.trim() });
-      const token = await ensureGoogleAccessToken(clientId.trim(), true);
+      // Obtain token first to preserve mobile browser user-gesture activation
+      const token = await ensureGoogleAccessToken(cleanClientId, true);
       const folder = await findOrCreateAppRootFolder(token);
       await db.settings.update('singleton', {
+        googleClientId: cleanClientId,
         googleDriveFolderId: folder.id,
         googleDriveFolderName: folder.name,
       });
+      markGoogleSyncLinked();
       setManualFolderId(folder.id);
-      flashSuccess(`Pasta "${folder.name}" ligada com sucesso.`);
+      flashSuccess(`Pasta "${folder.name}" ligada (ID: ${folder.id.slice(0, 10)}…).`);
     } catch (err) {
       flashError(err);
     } finally {
@@ -123,17 +131,20 @@ export function SettingsView({
   };
 
   const handlePickSharedFolder = async () => {
+    const cleanClientId = sanitizeGoogleClientId(clientId);
+    setClientId(cleanClientId);
+    localStorage.setItem('gf_google_picker_key', pickerApiKey.trim());
     setBusy(true);
     try {
-      await db.settings.update('singleton', { googleClientId: clientId.trim() });
-      localStorage.setItem('gf_google_picker_key', pickerApiKey.trim());
-      const token = await ensureGoogleAccessToken(clientId.trim(), true);
+      const token = await ensureGoogleAccessToken(cleanClientId, true);
       const picked = await pickSharedFolderWithPicker(token, pickerApiKey);
       if (picked) {
         await db.settings.update('singleton', {
+          googleClientId: cleanClientId,
           googleDriveFolderId: picked.id,
           googleDriveFolderName: picked.name,
         });
+        markGoogleSyncLinked();
         setManualFolderId(picked.id);
         flashSuccess(`Pasta partilhada "${picked.name}" selecionada.`);
       }
@@ -154,11 +165,15 @@ export function SettingsView({
   };
 
   const handleSync = async () => {
+    const cleanClientId = sanitizeGoogleClientId(clientId);
+    setClientId(cleanClientId);
     setBusy(true);
     try {
-      await db.settings.update('singleton', { googleClientId: clientId.trim() });
-      await onSyncNow();
-      flashSuccess('Sincronização com Google Drive concluída.');
+      if (cleanClientId !== settings.googleClientId) {
+        await db.settings.update('singleton', { googleClientId: cleanClientId });
+      }
+      const summary = await onSyncNow();
+      flashSuccess(summary);
     } catch (err) {
       flashError(err);
     } finally {
@@ -466,35 +481,35 @@ export function SettingsView({
             <p className="font-bold">Guia rápido (100% gratuito, sem servidores terceiros):</p>
             <ol className="list-decimal space-y-1 pl-4">
               <li>
-                Acede a <strong>console.cloud.google.com</strong> e cria um projeto (ex:
-                "GestaoFamiliar").
+                Acede a <strong>console.cloud.google.com</strong> e seleciona ou cria um projeto.
               </li>
               <li>
-                Em <strong>APIs &amp; Services → Library</strong>, ativa{' '}
-                <strong>Google Drive API</strong> e <strong>Google Picker API</strong>.
+                Ativa <strong>Google Drive API</strong> e <strong>Google Picker API</strong> (pesquisa
+                na barra de topo).
               </li>
               <li>
-                Em <strong>OAuth consent screen</strong>, escolhe <em>External</em> (em modo{' '}
-                <em>Testing</em>) e adiciona os 2 emails Gmail (teu e da tua mulher) em{' '}
-                <strong>Test users</strong>.
+                Em <strong>Google Auth Platform → Vamos começar</strong>, escolhe{' '}
+                <em>Externo</em>; depois em <strong>Público-alvo → Utilizadores de teste</strong>,
+                adiciona os 2 emails Gmail (teu e da tua mulher).
               </li>
               <li>
-                Em <strong>Credentials → Create Credentials → OAuth Client ID</strong> (Web
-                application), adiciona em <em>Authorized JavaScript origins</em>:{' '}
+                Em <strong>Clientes → Criar cliente</strong> (<em>Aplicativo da Web</em>), adiciona
+                em <em>Origens JavaScript autorizadas</em>:{' '}
                 <code className="rounded bg-white px-1 py-0.5">{window.location.origin}</code>
               </li>
               <li>
-                Cria também uma <strong>API Key</strong> (opcional, usada apenas no Google Picker do
-                2.º telemóvel para escolher a pasta partilhada).
+                Em <strong>APIs e serviços → Credenciais</strong>, cria também uma{' '}
+                <strong>Chave de API</strong> (necessária apenas para o Picker no 2.º telemóvel).
               </li>
               <li>
-                <strong>No 1.º telemóvel:</strong> cola o Client ID e clica em{' '}
+                <strong>No 1.º dispositivo:</strong> cola o ID do cliente (sem{' '}
+                <code>https://</code> nem espaços) e clica em{' '}
                 <em>Criar / Ligar pasta GestaoFamiliar</em>. Depois partilha essa pasta no Google
                 Drive com a tua mulher (como <em>Editor</em>).
               </li>
               <li>
-                <strong>No 2.º telemóvel:</strong> cola o mesmo Client ID (+ API Key) e clica em{' '}
-                <em>Escolher pasta partilhada (Picker)</em> para selecionar a pasta partilhada.
+                <strong>No 2.º dispositivo:</strong> cola o mesmo Client ID (+ API Key) e clica em{' '}
+                <em>Escolher pasta partilhada (Picker)</em>.
               </li>
             </ol>
           </div>
@@ -604,6 +619,7 @@ export function SettingsView({
               type="button"
               onClick={() => {
                 clearCachedGoogleToken();
+                clearGoogleSyncLinked();
                 flashSuccess('Sessão Google limpa neste dispositivo.');
               }}
               className="rounded-xl px-3 py-2 text-xs text-slate-500 hover:bg-slate-100"
@@ -611,6 +627,17 @@ export function SettingsView({
               Terminar sessão Google
             </button>
           </div>
+
+          {statusMsg && (
+            <div className="rounded-xl bg-teal-900 px-3 py-2 text-xs font-medium text-white">
+              {statusMsg}
+            </div>
+          )}
+          {errorMsg && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+              {errorMsg}
+            </div>
+          )}
         </form>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
@@ -619,6 +646,9 @@ export function SettingsView({
             {settings.lastSyncAt
               ? new Date(settings.lastSyncAt).toLocaleString('pt-PT')
               : 'Nunca sincronizado'}
+            {settings.googleDriveFolderId
+              ? ` · Pasta: ${settings.googleDriveFolderId.slice(0, 12)}…`
+              : ''}
           </span>
           <span>ID do dispositivo: {settings.deviceId}</span>
         </div>

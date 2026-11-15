@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react';
 import {
   CalendarDays,
   ChefHat,
+  Check,
+  Cloud,
+  CloudAlert,
   Home,
   Package,
+  RefreshCw,
   Settings,
   ShoppingCart,
   WifiOff,
@@ -15,7 +19,7 @@ import { SettingsView } from './modules/settings/SettingsView';
 import { ShoppingView } from './modules/shopping/ShoppingView';
 import { StockView } from './modules/stock/StockView';
 import { TodayView } from './modules/today/TodayView';
-import { runGoogleDriveSync } from './sync/syncService';
+import { useAutoSync } from './sync/useAutoSync';
 import type { AppTab } from './types/domain';
 
 const HASH_TO_TAB: Record<string, AppTab> = {
@@ -36,6 +40,9 @@ export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>(readInitialTab);
   const [openRecipeCreate, setOpenRecipeCreate] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
+
+  const autoSync = useAutoSync(data.settings);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -57,8 +64,23 @@ export function App() {
     window.location.hash = `#${tab}`;
   };
 
-  const handleSyncNow = async () => {
-    await runGoogleDriveSync(true);
+  const handleSyncNow = async (): Promise<string> => {
+    const summary = await autoSync.triggerManualSync();
+    return summary;
+  };
+
+  const handleHeaderSyncClick = async () => {
+    setHeaderNotice(null);
+    try {
+      const summary = await handleSyncNow();
+      setHeaderNotice({ text: summary, isError: false });
+      setTimeout(() => setHeaderNotice(null), 3500);
+    } catch (err) {
+      setHeaderNotice({
+        text: err instanceof Error ? err.message : 'Erro ao sincronizar.',
+        isError: true,
+      });
+    }
   };
 
   if (!data.ready || !data.settings) {
@@ -133,13 +155,59 @@ export function App() {
             })}
           </nav>
 
-          <div className="flex items-center gap-2">
-            {!isOnline && (
+          <div className="flex items-center gap-1.5">
+            {!isOnline ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                 <WifiOff className="h-3.5 w-3.5" />
                 Offline
               </span>
+            ) : (
+              autoSync.isConfigured && (
+                <button
+                  type="button"
+                  onClick={handleHeaderSyncClick}
+                  disabled={autoSync.phase === 'syncing'}
+                  title={autoSync.message ?? 'Sincronizar com Google Drive'}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                    autoSync.phase === 'needs_auth' || autoSync.phase === 'error'
+                      ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                      : autoSync.phase === 'syncing'
+                        ? 'border-teal-200 bg-teal-50 text-teal-800'
+                        : autoSync.hasPendingLocalEdits
+                          ? 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  }`}
+                >
+                  {autoSync.phase === 'syncing' ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>A sincronizar…</span>
+                    </>
+                  ) : autoSync.phase === 'needs_auth' ? (
+                    <>
+                      <CloudAlert className="h-3.5 w-3.5" />
+                      <span>Tocar p/ Sync</span>
+                    </>
+                  ) : autoSync.phase === 'error' ? (
+                    <>
+                      <CloudAlert className="h-3.5 w-3.5" />
+                      <span>Erro Sync</span>
+                    </>
+                  ) : autoSync.hasPendingLocalEdits ? (
+                    <>
+                      <Cloud className="h-3.5 w-3.5" />
+                      <span>A enviar…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Sync</span>
+                    </>
+                  )}
+                </button>
+              )
             )}
+
             <button
               type="button"
               onClick={() => navigate('settings')}
@@ -155,6 +223,27 @@ export function App() {
             </button>
           </div>
         </div>
+
+        {headerNotice && (
+          <div
+            className={`border-t px-4 py-2 text-center text-xs font-medium ${
+              headerNotice.isError
+                ? 'border-rose-200 bg-rose-50 text-rose-800'
+                : 'border-teal-200 bg-teal-50 text-teal-900'
+            }`}
+          >
+            <span>{headerNotice.text}</span>
+            {headerNotice.isError && (
+              <button
+                type="button"
+                onClick={() => setHeaderNotice(null)}
+                className="ml-2 underline"
+              >
+                Fechar
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Main Content */}

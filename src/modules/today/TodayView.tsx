@@ -38,7 +38,7 @@ interface TodayViewProps {
   members: HouseholdMember[];
   onNavigate: (tab: AppTab) => void;
   onQuickNewRecipe: () => void;
-  onSyncNow: () => Promise<void>;
+  onSyncNow: () => Promise<string>;
 }
 
 export function TodayView({
@@ -124,13 +124,13 @@ export function TodayView({
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await onSyncNow();
-      setToast('Sincronização com Google Drive concluída.');
+      const summary = await onSyncNow();
+      setToast(summary);
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Falha na sincronização.');
     } finally {
       setSyncing(false);
-      setTimeout(() => setToast(null), 3500);
+      setTimeout(() => setToast(null), 4000);
     }
   };
 
