@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Check,
   Cloud,
   Download,
   ExternalLink,
@@ -8,6 +9,7 @@ import {
   HelpCircle,
   Info,
   MapPin,
+  Pencil,
   Plus,
   RefreshCw,
   Trash2,
@@ -59,6 +61,120 @@ const COLOR_OPTIONS: LocationColorToken[] = [
   'slate',
 ];
 
+interface MemberDraft {
+  name: string;
+  role: HouseholdRole;
+  notes: string;
+  allergies: string[];
+  servingsWeight: string;
+}
+
+function defaultWeightForRole(role: HouseholdRole): number {
+  return role === 'adult' ? 1 : role === 'child' ? 0.5 : 0;
+}
+
+function createEmptyMemberDraft(): MemberDraft {
+  return {
+    name: '',
+    role: 'adult',
+    notes: '',
+    allergies: [],
+    servingsWeight: '1',
+  };
+}
+
+function MemberFormFields({
+  draft,
+  onChange,
+}: {
+  draft: MemberDraft;
+  onChange: (next: MemberDraft) => void;
+}) {
+  const handleRoleChange = (nextRole: HouseholdRole) => {
+    onChange({
+      ...draft,
+      role: nextRole,
+      allergies: nextRole === 'pet' ? [] : draft.allergies,
+      servingsWeight: String(defaultWeightForRole(nextRole)),
+    });
+  };
+
+  return (
+    <>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <input
+          type="text"
+          value={draft.name}
+          onChange={(e) => onChange({ ...draft, name: e.target.value })}
+          placeholder="Nome (ex: André, Maria, Max...)"
+          aria-label="Nome do membro"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:col-span-2"
+        />
+        <select
+          value={draft.role}
+          onChange={(e) => handleRoleChange(e.target.value as HouseholdRole)}
+          aria-label="Papel no agregado"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+        >
+          <option value="adult">Adulto</option>
+          <option value="child">Criança</option>
+          <option value="pet">Animal de Estimação</option>
+        </select>
+        {draft.role !== 'pet' && (
+          <input
+            type="number"
+            min="0"
+            max="5"
+            step="0.25"
+            value={draft.servingsWeight}
+            onChange={(e) => onChange({ ...draft, servingsWeight: e.target.value })}
+            aria-label="Peso na ementa (doses)"
+            title="Peso na ementa (doses)"
+            placeholder="Doses (ex: 1)"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+          />
+        )}
+      </div>
+
+      <input
+        type="text"
+        value={draft.notes}
+        onChange={(e) => onChange({ ...draft, notes: e.target.value })}
+        placeholder="Preferências / notas (ex: Não gosta de coentros, Ração sénior...)"
+        aria-label="Preferências ou notas"
+        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+      />
+
+      {draft.role !== 'pet' && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-semibold text-slate-500">Restrições:</span>
+          {COMMON_ALLERGENS.map((al) => (
+            <button
+              key={al}
+              type="button"
+              onClick={() =>
+                onChange({
+                  ...draft,
+                  allergies: draft.allergies.includes(al)
+                    ? draft.allergies.filter((x) => x !== al)
+                    : [...draft.allergies, al],
+                })
+              }
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                draft.allergies.includes(al)
+                  ? 'bg-rose-600 text-white'
+                  : 'border border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              {al}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SettingsView({
   settings,
   members,
@@ -73,11 +189,10 @@ export function SettingsView({
   const [warningDays, setWarningDays] = useState(String(settings.expiryWarningDays));
   const [showGuide, setShowGuide] = useState(false);
 
-  // Member form
-  const [memberName, setMemberName] = useState('');
-  const [memberRole, setMemberRole] = useState<HouseholdRole>('adult');
-  const [memberAllergies, setMemberAllergies] = useState<string[]>([]);
-  const [memberNotes, setMemberNotes] = useState('');
+  // Member form (create + inline edit)
+  const [newMember, setNewMember] = useState<MemberDraft>(createEmptyMemberDraft);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editMemberDraft, setEditMemberDraft] = useState<MemberDraft>(createEmptyMemberDraft);
 
   // Location form
   const [locName, setLocName] = useState('');
@@ -239,22 +354,56 @@ export function SettingsView({
     }
   };
 
+  const parseServingsWeight = (raw: string, role: HouseholdRole): number => {
+    if (role === 'pet') return 0;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultWeightForRole(role);
+  };
+
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!memberName.trim()) return;
+    if (!newMember.name.trim()) return;
     const member: HouseholdMember = {
       ...createSyncMetadata(settings.deviceId),
-      name: memberName.trim(),
-      role: memberRole,
-      dietaryNotes: memberNotes.trim(),
-      allergies: memberAllergies,
-      defaultServingsWeight: memberRole === 'adult' ? 1 : memberRole === 'child' ? 0.5 : 0,
+      name: newMember.name.trim(),
+      role: newMember.role,
+      dietaryNotes: newMember.notes.trim(),
+      allergies: newMember.role === 'pet' ? [] : newMember.allergies,
+      defaultServingsWeight: parseServingsWeight(newMember.servingsWeight, newMember.role),
       avatarColor: '#0f766e',
     };
     await db.members.put(member);
-    setMemberName('');
-    setMemberAllergies([]);
-    setMemberNotes('');
+    setNewMember(createEmptyMemberDraft());
+  };
+
+  const startEditMember = (m: HouseholdMember) => {
+    setEditingMemberId(m.id);
+    setEditMemberDraft({
+      name: m.name,
+      role: m.role,
+      notes: m.dietaryNotes,
+      allergies: [...m.allergies],
+      servingsWeight: String(m.defaultServingsWeight),
+    });
+  };
+
+  const handleSaveEditMember = async (e: React.FormEvent, original: HouseholdMember) => {
+    e.preventDefault();
+    if (!editMemberDraft.name.trim()) return;
+    await db.members.put({
+      ...original,
+      name: editMemberDraft.name.trim(),
+      role: editMemberDraft.role,
+      dietaryNotes: editMemberDraft.notes.trim(),
+      allergies: editMemberDraft.role === 'pet' ? [] : editMemberDraft.allergies,
+      defaultServingsWeight: parseServingsWeight(
+        editMemberDraft.servingsWeight,
+        editMemberDraft.role,
+      ),
+      updatedAt: nowIso(),
+      lastModifiedBy: settings.deviceId,
+    });
+    setEditingMemberId(null);
   };
 
   const deleteMember = async (m: HouseholdMember) => {
@@ -265,6 +414,9 @@ export function SettingsView({
       updatedAt: now,
       lastModifiedBy: settings.deviceId,
     });
+    if (editingMemberId === m.id) {
+      setEditingMemberId(null);
+    }
   };
 
   const handleAddLocation = async (e: React.FormEvent) => {
@@ -322,84 +474,75 @@ export function SettingsView({
 
         {members.length > 0 && (
           <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
-            {members.map((m) => (
-              <div key={m.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                <div>
-                  <p className="font-semibold text-slate-800">
-                    {m.name}{' '}
-                    <span className="text-xs font-normal text-slate-500">
-                      ({HOUSEHOLD_ROLE_LABELS[m.role]})
-                    </span>
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {m.allergies.length > 0 && `Alergias: ${m.allergies.join(', ')}`}
-                    {m.allergies.length > 0 && m.dietaryNotes ? ' · ' : ''}
-                    {m.dietaryNotes}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => deleteMember(m)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+            {members.map((m) =>
+              editingMemberId === m.id ? (
+                <form
+                  key={m.id}
+                  onSubmit={(e) => handleSaveEditMember(e, m)}
+                  className="space-y-2.5 bg-teal-50/40 p-3"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+                  <MemberFormFields draft={editMemberDraft} onChange={setEditMemberDraft} />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 rounded-xl bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Guardar alterações
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingMemberId(null)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div key={m.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <div>
+                    <p className="font-semibold text-slate-800">
+                      {m.name}{' '}
+                      <span className="text-xs font-normal text-slate-500">
+                        ({HOUSEHOLD_ROLE_LABELS[m.role]}
+                        {m.role !== 'pet' ? ` · ${m.defaultServingsWeight} dose(s)` : ''})
+                      </span>
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {m.allergies.length > 0 && `Alergias: ${m.allergies.join(', ')}`}
+                      {m.allergies.length > 0 && m.dietaryNotes ? ' · ' : ''}
+                      {m.dietaryNotes}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => startEditMember(m)}
+                      aria-label={`Editar ${m.name}`}
+                      title="Editar membro"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-teal-50 hover:text-teal-700"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteMember(m)}
+                      aria-label={`Remover ${m.name}`}
+                      title="Remover membro"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ),
+            )}
           </div>
         )}
 
         <form onSubmit={handleAddMember} className="space-y-2.5 rounded-xl bg-slate-50 p-3">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <input
-              type="text"
-              value={memberName}
-              onChange={(e) => setMemberName(e.target.value)}
-              placeholder="Nome (ex: André, Maria, Max...)"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:col-span-2"
-            />
-            <select
-              value={memberRole}
-              onChange={(e) => setMemberRole(e.target.value as HouseholdRole)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-            >
-              <option value="adult">Adulto</option>
-              <option value="child">Criança</option>
-              <option value="pet">Animal de Estimação</option>
-            </select>
-          </div>
-
-          <input
-            type="text"
-            value={memberNotes}
-            onChange={(e) => setMemberNotes(e.target.value)}
-            placeholder="Preferências / notas (ex: Não gosta de coentros, Ração sénior...)"
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-          />
-
-          {memberRole !== 'pet' && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-slate-500">Restrições:</span>
-              {COMMON_ALLERGENS.map((al) => (
-                <button
-                  key={al}
-                  type="button"
-                  onClick={() =>
-                    setMemberAllergies((prev) =>
-                      prev.includes(al) ? prev.filter((x) => x !== al) : [...prev, al],
-                    )
-                  }
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    memberAllergies.includes(al)
-                      ? 'bg-rose-600 text-white'
-                      : 'border border-slate-200 bg-white text-slate-600'
-                  }`}
-                >
-                  {al}
-                </button>
-              ))}
-            </div>
-          )}
+          <MemberFormFields draft={newMember} onChange={setNewMember} />
 
           <button
             type="submit"
