@@ -113,4 +113,36 @@ describe('SettingsView household member editing', () => {
       expect(saved?.allergies).toEqual([]);
     });
   });
+
+  it('collapses previous section and expands the clicked accordion section', async () => {
+    const settings = await ensureDatabaseSeeded();
+    const initialMember = makeMember();
+
+    render(
+      <SettingsView
+        settings={settings}
+        members={[initialMember]}
+        locations={[]}
+        onSyncNow={vi.fn(async () => 'ok')}
+      />,
+    );
+
+    const membersToggle = screen.getByRole('button', { name: /Agregado Familiar/i });
+    const aboutToggle = screen.getByRole('button', { name: /Acerca/i });
+
+    expect(membersToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(aboutToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('AI-Cenas92')).not.toBeInTheDocument();
+
+    fireEvent.click(aboutToggle);
+
+    expect(membersToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(aboutToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('AI-Cenas92')).toBeInTheDocument();
+
+    // Clicking the expanded section collapses all sections
+    fireEvent.click(aboutToggle);
+    expect(aboutToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('AI-Cenas92')).not.toBeInTheDocument();
+  });
 });

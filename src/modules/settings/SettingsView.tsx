@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Check,
+  ChevronDown,
   Cloud,
   Download,
   ExternalLink,
   FolderOpen,
   FolderPlus,
+  HardDrive,
   HelpCircle,
   Info,
   MapPin,
@@ -175,12 +177,62 @@ function MemberFormFields({
   );
 }
 
+type SettingsSectionId = 'members' | 'locations' | 'sync' | 'backup' | 'about';
+
+function AccordionSection({
+  title,
+  icon,
+  badge,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  badge?: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50/80"
+      >
+        <span className="flex min-w-0 items-center gap-2 text-sm font-bold text-slate-900">
+          {icon}
+          <span className="truncate">{title}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {badge && (
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+              {badge}
+            </span>
+          )}
+          <ChevronDown
+            className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+              isOpen ? 'rotate-180 text-teal-700' : ''
+            }`}
+          />
+        </span>
+      </button>
+      {isOpen && <div className="space-y-3 border-t border-slate-100 p-4">{children}</div>}
+    </section>
+  );
+}
+
 export function SettingsView({
   settings,
   members,
   locations,
   onSyncNow,
 }: SettingsViewProps) {
+  const [openSection, setOpenSection] = useState<SettingsSectionId | null>('members');
+  const toggleSection = (id: SettingsSectionId) =>
+    setOpenSection((prev) => (prev === id ? null : id));
   const [clientId, setClientId] = useState(settings.googleClientId);
   const [pickerApiKey, setPickerApiKey] = useState(
     () => localStorage.getItem('gf_google_picker_key') ?? '',
@@ -466,12 +518,13 @@ export function SettingsView({
       )}
 
       {/* Household Members */}
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-          <Users className="h-4 w-4 text-teal-700" />
-          Agregado Familiar (Casal, Filhos e Animais)
-        </h2>
-
+      <AccordionSection
+        title="Agregado Familiar (Casal, Filhos e Animais)"
+        icon={<Users className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${members.length}`}
+        isOpen={openSection === 'members'}
+        onToggle={() => toggleSection('members')}
+      >
         {members.length > 0 && (
           <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
             {members.map((m) =>
@@ -552,15 +605,16 @@ export function SettingsView({
             Adicionar membro
           </button>
         </form>
-      </section>
+      </AccordionSection>
 
       {/* Storage Locations */}
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-          <MapPin className="h-4 w-4 text-teal-700" />
-          Locais de Armazenamento
-        </h2>
-
+      <AccordionSection
+        title="Locais de Armazenamento"
+        icon={<MapPin className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${locations.length}`}
+        isOpen={openSection === 'locations'}
+        onToggle={() => toggleSection('locations')}
+      >
         <div className="flex flex-wrap gap-2">
           {locations.map((loc) => {
             const colors = LOCATION_COLOR_CLASSES[loc.colorToken];
@@ -625,15 +679,20 @@ export function SettingsView({
             </button>
           </div>
         </form>
-      </section>
+      </AccordionSection>
 
       {/* Google Drive Sync & Preferences */}
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-            <Cloud className="h-4 w-4 text-teal-700" />
-            Sincronização Privada (Google Drive) e Alertas
-          </h2>
+      <AccordionSection
+        title="Sincronização Privada (Google Drive) e Alertas"
+        icon={<Cloud className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={settings.googleDriveFolderId ? 'Ligada' : `${settings.expiryWarningDays}d`}
+        isOpen={openSection === 'sync'}
+        onToggle={() => toggleSection('sync')}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-slate-500">
+            Sincronização privada por pasta Google Drive e dias de aviso de validade.
+          </p>
           <button
             type="button"
             onClick={() => setShowGuide(!showGuide)}
@@ -841,13 +900,16 @@ export function SettingsView({
           </span>
           <span>ID do dispositivo: {settings.deviceId}</span>
         </div>
-      </section>
+      </AccordionSection>
 
       {/* Offline Manual JSON Backup */}
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-        <h2 className="text-sm font-bold text-slate-900">
-          Backup Manual Offline (Exportar / Importar JSON)
-        </h2>
+      <AccordionSection
+        title="Backup Manual Offline (Exportar / Importar JSON)"
+        icon={<HardDrive className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge="JSON"
+        isOpen={openSection === 'backup'}
+        onToggle={() => toggleSection('backup')}
+      >
         <p className="text-xs text-slate-500">
           Permite guardar uma cópia completa (incluindo fotos e anexos) ou sincronizar por ficheiro
           sem usar a API do Google Drive.
@@ -873,20 +935,16 @@ export function SettingsView({
             />
           </label>
         </div>
-      </section>
+      </AccordionSection>
 
       {/* About / Acerca */}
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Info className="h-4 w-4 text-teal-700" />
-            <h2 className="text-sm font-bold text-slate-900">Acerca</h2>
-          </div>
-          <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-bold text-teal-800">
-            v{APP_INFO.version}
-          </span>
-        </div>
-
+      <AccordionSection
+        title="Acerca"
+        icon={<Info className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`v${APP_INFO.version}`}
+        isOpen={openSection === 'about'}
+        onToggle={() => toggleSection('about')}
+      >
         <dl className="grid grid-cols-1 gap-2 rounded-xl bg-slate-50 p-3 text-xs sm:grid-cols-3">
           <div>
             <dt className="text-[11px] font-medium text-slate-500">Aplicação</dt>
@@ -934,7 +992,7 @@ export function SettingsView({
             {updateMsg}
           </p>
         )}
-      </section>
+      </AccordionSection>
     </div>
   );
 }

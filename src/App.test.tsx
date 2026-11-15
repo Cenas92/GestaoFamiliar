@@ -42,7 +42,12 @@ describe('App integration', () => {
     fireEvent.click(settingsButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Acerca')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Acerca/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Acerca/i }));
+
+    await waitFor(() => {
       expect(screen.getByText('AI-Cenas92')).toBeInTheDocument();
     });
   });
