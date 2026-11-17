@@ -12,7 +12,16 @@ export async function prepareAttachmentBlob(
     };
   }
 
-  const image = await loadImageFromFile(file);
+  let image: HTMLImageElement;
+  try {
+    image = await loadImageFromFile(file);
+  } catch {
+    return {
+      blob: file,
+      mimeType: file.type || 'image/jpeg',
+      fileName: file.name,
+    };
+  }
   const scale = Math.min(1, MAX_DIMENSION / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));

@@ -22,6 +22,7 @@ import type {
   Unit,
 } from '../../types/domain';
 import { createId, createSyncMetadata, nowIso } from '../../utils/id';
+import { saveImageAttachment } from '../../utils/attachmentStorage';
 import { prepareAttachmentBlob } from '../../utils/imageCompression';
 
 interface RecipeFormModalProps {
@@ -118,22 +119,9 @@ export function RecipeFormModal({
 
   const handlePhotoUpload = async (file: File | undefined) => {
     if (!file) return;
-    const prepared = await prepareAttachmentBlob(file);
-    const id = createId();
-    const record: AttachmentRecord = {
-      id,
-      fileName: prepared.fileName,
-      mimeType: prepared.mimeType,
-      sizeBytes: prepared.blob.size,
-      blob: prepared.blob,
-      driveFileId: null,
-      uploadedToDrive: false,
-      updatedAt: nowIso(),
-      deletedAt: null,
-    };
-    await db.attachments.put(record);
-    setPhotoAttachmentId(id);
-    setPhotoFileName(`${prepared.fileName} (${Math.round(prepared.blob.size / 1024)} KB)`);
+    const saved = await saveImageAttachment(file);
+    setPhotoAttachmentId(saved.id);
+    setPhotoFileName(`${saved.fileName} (${Math.round(saved.sizeBytes / 1024)} KB)`);
   };
 
   const handleDocUpload = async (file: File | undefined) => {

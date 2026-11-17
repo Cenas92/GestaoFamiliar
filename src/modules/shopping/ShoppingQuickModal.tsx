@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Save, Trash2 } from 'lucide-react';
+import { CameraPhotoControl } from '../../components/CameraPhotoControl';
 import { Modal } from '../../components/Modal';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
 import { UNITS } from '../../constants/labels';
@@ -10,6 +11,7 @@ import type {
   SupermarketSectionConfig,
   Unit,
 } from '../../types/domain';
+import { softDeleteAttachmentIfUnused } from '../../utils/attachmentStorage';
 import { getOrderedSupermarketSections } from '../../utils/sectionVisuals';
 import { getStepForUnit } from '../../utils/units';
 import type { ShoppingItemDisplayMeta } from './shoppingVisuals';
@@ -25,7 +27,13 @@ interface ShoppingQuickModalProps {
     item: ShoppingItem,
     patch: Pick<
       ShoppingItem,
-      'label' | 'quantity' | 'unit' | 'section' | 'targetLocationId' | 'notes'
+      | 'label'
+      | 'quantity'
+      | 'unit'
+      | 'section'
+      | 'targetLocationId'
+      | 'notes'
+      | 'photoAttachmentId'
     >,
   ) => void;
   onDeleteItem: (item: ShoppingItem) => void;
@@ -51,6 +59,7 @@ export function ShoppingQuickModal({
   const [section, setSection] = useState<SupermarketSection>('pantry');
   const [targetLocationId, setTargetLocationId] = useState<string>('');
   const [notes, setNotes] = useState('');
+  const [photoAttachmentId, setPhotoAttachmentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !meta) return;
@@ -60,11 +69,30 @@ export function ShoppingQuickModal({
     setSection(meta.item.section);
     setTargetLocationId(meta.item.targetLocationId ?? '');
     setNotes(meta.item.notes ?? '');
+    setPhotoAttachmentId(meta.item.photoAttachmentId ?? null);
   }, [open, meta]);
 
   if (!meta) return null;
   const { item, visual, sectionLabel, sourceLabel } = meta;
   const step = getStepForUnit(unit);
+
+  const handleCloseModal = () => {
+    if (photoAttachmentId && photoAttachmentId !== (item.photoAttachmentId ?? null)) {
+      void softDeleteAttachmentIfUnused(photoAttachmentId, { excludeShoppingId: item.id });
+    }
+    onClose();
+  };
+
+  const handlePhotoDraftChange = (nextPhotoId: string | null) => {
+    if (
+      photoAttachmentId &&
+      photoAttachmentId !== nextPhotoId &&
+      photoAttachmentId !== (item.photoAttachmentId ?? null)
+    ) {
+      void softDeleteAttachmentIfUnused(photoAttachmentId, { excludeShoppingId: item.id });
+    }
+    setPhotoAttachmentId(nextPhotoId);
+  };
 
   const adjustDraftQty = (delta: number) => {
     const current = Number(qtyStr.replace(',', '.')) || 0;
@@ -83,6 +111,7 @@ export function ShoppingQuickModal({
       section,
       targetLocationId: targetLocationId || null,
       notes: notes.trim(),
+      photoAttachmentId,
     });
     onClose();
   };
@@ -90,7 +119,7 @@ export function ShoppingQuickModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={handleCloseModal}
       title={item.label}
       subtitle={`${sectionLabel} · Origem: ${sourceLabel}`}
       maxWidthClass="max-w-md"
@@ -123,6 +152,15 @@ export function ShoppingQuickModal({
           </button>
         </div>
 
+        <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
+          <span className="block text-xs font-semibold text-slate-600">Foto do produto</span>
+          <CameraPhotoControl
+            attachmentId={photoAttachmentId}
+            alt={label || item.label}
+            onChange={handlePhotoDraftChange}
+          />
+        </div>
+
         <div>
           <label htmlFor="shop-edit-label" className="mb-1 block text-xs font-semibold text-slate-600">
             Nome do artigo
@@ -131,6 +169,9 @@ export function ShoppingQuickModal({
             id="shop-edit-label"
             type="text"
             value={label}
+            onFocus={(e) => {
+              if (e.target.value === 'Artigo com foto') e.target.select();
+            }}
             onChange={(e) => setLabel(e.target.value)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-600"
           />

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ChangeEvent } from 'react';
 import {
   AlertTriangle,
+  Camera,
   Check,
   ChevronDown,
   ChevronRight,
@@ -14,6 +15,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { CameraPhotoControl } from '../../components/CameraPhotoControl';
 import { CatalogPicker } from '../../components/CatalogPicker';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
 import { Modal } from '../../components/Modal';
@@ -31,6 +33,10 @@ import type {
   SupermarketSectionConfig,
   Unit,
 } from '../../types/domain';
+import {
+  saveImageAttachment,
+  softDeleteAttachmentIfUnused,
+} from '../../utils/attachmentStorage';
 import { nowIso } from '../../utils/id';
 import {
   getOrderedSupermarketSections,
@@ -169,6 +175,20 @@ function ShoppingCardItem({
                   {sectionLabel}
                 </span>
               )}
+              {item.photoAttachmentId && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenQuick(item.id);
+                  }}
+                  aria-label={`Ver foto de ${item.label}`}
+                  className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600 transition hover:bg-teal-50 hover:text-teal-700"
+                >
+                  <Camera className="h-3 w-3" aria-hidden="true" />
+                  Foto
+                </button>
+              )}
               {detailed && (
                 <>
                   <span className="rounded-md bg-teal-50 px-1.5 py-0.5 font-medium text-teal-800">
@@ -300,6 +320,18 @@ function ShoppingLineRow({
         {quantityLabel}
       </span>
 
+      {item.photoAttachmentId && (
+        <button
+          type="button"
+          onClick={() => onOpenQuick(item.id)}
+          aria-label={`Ver foto de ${item.label}`}
+          title="Ver foto"
+          className="shrink-0 rounded-lg bg-slate-100 p-1 text-slate-500 hover:bg-teal-50 hover:text-teal-700"
+        >
+          <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => onOpenQuick(item.id)}
@@ -339,7 +371,7 @@ function ShoppingGridTile({
         aria-label={`${item.checked ? 'Desmarcar' : 'Marcar'} ${item.label}, ${quantityLabel || '1 un'}`}
         className="flex flex-1 flex-col justify-between p-2.5 text-center"
       >
-        <div className="flex w-full items-center justify-between">
+        <div className="flex w-full items-center justify-between pr-6">
           <span
             className={`inline-flex h-5 w-5 items-center justify-center rounded-md border ${
               item.checked
@@ -349,6 +381,12 @@ function ShoppingGridTile({
           >
             {item.checked && <Check className="h-3 w-3" aria-hidden="true" />}
           </span>
+          {item.photoAttachmentId && (
+            <Camera
+              className="h-3.5 w-3.5 text-teal-700"
+              aria-label="Tem foto anexada"
+            />
+          )}
         </div>
 
         <div className={`my-1 flex justify-center ${item.checked ? 'opacity-55' : ''}`}>
@@ -411,6 +449,8 @@ export function ShoppingView({
   const [unit, setUnit] = useState<Unit>('un');
   const [section, setSection] = useState<SupermarketSection>('pantry');
   const [showCatalogInput, setShowCatalogInput] = useState(true);
+  const [pendingPhotoId, setPendingPhotoId] = useState<string | null>(null);
+  const [quickCameraBusy, setQuickCameraBusy] = useState(false);
 
   const [addFormOpen, setAddFormOpen] = useState<boolean>(() =>
     shouldExpandPanelsByDefault(uiDensity),
@@ -572,7 +612,9 @@ export function ShoppingView({
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    const label = selectedCatalog ? selectedCatalog.name : freeText.trim();
+    const label = selectedCatalog
+      ? selectedCatalog.name
+      : freeText.trim() || (pendingPhotoId ? 'Artigo com foto' : '');
     if (!label) return;
 
     const item = buildShoppingItem(
@@ -584,6 +626,7 @@ export function ShoppingView({
         section: selectedCatalog ? selectedCatalog.supermarketSection : effectiveSection,
         targetLocationId: selectedCatalog?.defaultLocationId ?? locations[0]?.id ?? null,
         source: 'manual',
+        photoAttachmentId: pendingPhotoId,
       },
       deviceId,
     );
@@ -591,6 +634,45 @@ export function ShoppingView({
     setSelectedCatalog(null);
     setFreeText('');
     setQty('1');
+    setPendingPhotoId(null);
+  };
+
+  const handleQuickCameraCapture = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setQuickCameraBusy(true);
+    try {
+      const saved = await saveImageAttachment(file);
+      const defaultSection =
+        sectionFilter !== 'all'
+          ? sectionFilter
+          : orderedSections.some((s) => s.id === 'other')
+            ? 'other'
+            : (orderedSections[0]?.id ?? 'other');
+      const item = buildShoppingItem(
+        {
+          catalogItemId: null,
+          label: 'Artigo com foto',
+          quantity: 1,
+          unit: 'un',
+          section: defaultSection,
+          targetLocationId: locations[0]?.id ?? null,
+          source: 'manual',
+          photoAttachmentId: saved.id,
+        },
+        deviceId,
+      );
+      await db.shoppingItems.put(item);
+      if (statusFilter === 'checked') setStatusFilter('all');
+      if (sourceFilter !== 'all') setSourceFilter('all');
+      if (search) setSearch('');
+      setQuickItemId(item.id);
+      showNotice('Foto guardada na lista de compras.');
+    } finally {
+      setQuickCameraBusy(false);
+    }
   };
 
   const handleImportLowStock = async () => {
@@ -643,7 +725,13 @@ export function ShoppingView({
     item: ShoppingItem,
     patch: Pick<
       ShoppingItem,
-      'label' | 'quantity' | 'unit' | 'section' | 'targetLocationId' | 'notes'
+      | 'label'
+      | 'quantity'
+      | 'unit'
+      | 'section'
+      | 'targetLocationId'
+      | 'notes'
+      | 'photoAttachmentId'
     >,
   ) => {
     await db.shoppingItems.put({
@@ -652,6 +740,9 @@ export function ShoppingView({
       updatedAt: nowIso(),
       lastModifiedBy: deviceId,
     });
+    if (item.photoAttachmentId && item.photoAttachmentId !== patch.photoAttachmentId) {
+      void softDeleteAttachmentIfUnused(item.photoAttachmentId, { excludeShoppingId: item.id });
+    }
   };
 
   const deleteItem = async (item: ShoppingItem) => {
@@ -662,6 +753,9 @@ export function ShoppingView({
       updatedAt: now,
       lastModifiedBy: deviceId,
     });
+    if (item.photoAttachmentId) {
+      void softDeleteAttachmentIfUnused(item.photoAttachmentId, { excludeShoppingId: item.id });
+    }
   };
 
   const toggleSectionCollapsed = (sec: SupermarketSection) => {
@@ -731,6 +825,11 @@ export function ShoppingView({
       if (lotsToCreate.length) await db.stockLots.bulkPut(lotsToCreate);
       if (itemsToDelete.length) await db.shoppingItems.bulkPut(itemsToDelete);
     });
+    for (const del of itemsToDelete) {
+      if (del.photoAttachmentId) {
+        void softDeleteAttachmentIfUnused(del.photoAttachmentId, { excludeShoppingId: del.id });
+      }
+    }
 
     setPutAwayOpen(false);
     showNotice(`${lotsToCreate.length} produto(s) arrumado(s) no stock!`);
@@ -852,6 +951,24 @@ export function ShoppingView({
               Arrumar ({checkedItems.length})
             </button>
           )}
+          <label
+            className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            title="Tirar foto rápida para compras"
+          >
+            <Camera className="h-3.5 w-3.5 text-teal-700" aria-hidden="true" />
+            <span className="hidden sm:inline">
+              {quickCameraBusy ? 'A guardar...' : 'Foto'}
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              disabled={quickCameraBusy}
+              aria-label="Foto rápida para compras"
+              onChange={handleQuickCameraCapture}
+              className="hidden"
+            />
+          </label>
           <button
             type="button"
             onClick={() => setAddFormOpen((open) => !open)}
@@ -975,6 +1092,17 @@ export function ShoppingView({
               Guardar na lista
             </button>
           </div>
+
+          <CameraPhotoControl
+            attachmentId={pendingPhotoId}
+            alt={selectedCatalog?.name || freeText || 'Foto do produto'}
+            onChange={(nextId) => {
+              if (pendingPhotoId && nextId !== pendingPhotoId) {
+                void softDeleteAttachmentIfUnused(pendingPhotoId);
+              }
+              setPendingPhotoId(nextId);
+            }}
+          />
         </form>
       )}
 

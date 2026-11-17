@@ -219,6 +219,7 @@ export function buildShoppingItem(
     targetLocationId: string | null;
     source: ShoppingItem['source'];
     notes?: string;
+    photoAttachmentId?: string | null;
   },
   deviceId: string,
 ): ShoppingItem {
@@ -238,5 +239,6 @@ export function buildShoppingItem(
     targetLocationId: params.targetLocationId,
     source: params.source,
     notes: params.notes?.trim() ?? '',
+    photoAttachmentId: params.photoAttachmentId ?? null,
   };
 }

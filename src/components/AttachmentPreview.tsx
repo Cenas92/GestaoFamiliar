@@ -7,9 +7,15 @@ interface AttachmentImageProps {
   attachmentId: string | null;
   alt: string;
   className?: string;
+  fit?: 'cover' | 'contain';
 }
 
-export function AttachmentImage({ attachmentId, alt, className = '' }: AttachmentImageProps) {
+export function AttachmentImage({
+  attachmentId,
+  alt,
+  className = '',
+  fit = 'cover',
+}: AttachmentImageProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [record, setRecord] = useState<AttachmentRecord | null>(null);
 
@@ -56,7 +62,8 @@ export function AttachmentImage({ attachmentId, alt, className = '' }: Attachmen
     );
   }
 
-  return <img src={url} alt={alt} className={`object-cover ${className}`} />;
+  const fitClass = fit === 'contain' ? 'object-contain' : 'object-cover';
+  return <img src={url} alt={alt} className={`${fitClass} ${className}`} />;
 }
 
 interface AttachmentDownloadButtonProps {

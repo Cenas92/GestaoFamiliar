@@ -197,6 +197,7 @@ export interface ShoppingItem extends SyncMetadata {
   targetLocationId: string | null;
   source: 'manual' | 'low_stock' | 'recipe' | 'meal_plan';
   notes: string;
+  photoAttachmentId?: string | null;
 }
 
 export interface AttachmentRecord {
