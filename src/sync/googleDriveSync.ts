@@ -7,6 +7,10 @@ const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
 const TOKEN_STORAGE_KEY = 'gf_google_token_cache_v2';
+const REFRESH_TOKEN_STORAGE_KEY = 'gf_google_refresh_token_v1';
+const CLIENT_SECRET_STORAGE_KEY = 'gf_google_client_secret';
+const ACCOUNT_HINT_STORAGE_KEY = 'gf_google_account_hint_v1';
+const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 export const STATE_FILE_NAME = 'family_state.json';
 export const ATTACHMENTS_FOLDER_NAME = 'attachments';
@@ -19,6 +23,18 @@ interface TokenResponse {
   error?: string;
 }
 
+interface CodeResponse {
+  code?: string;
+  scope?: string;
+  error?: string;
+  error_description?: string;
+}
+
+export interface ConnectedGoogleAccount {
+  email: string;
+  displayName?: string;
+}
+
 declare global {
   interface Window {
     google?: {
@@ -27,10 +43,24 @@ declare global {
           initTokenClient: (config: {
             client_id: string;
             scope: string;
+            login_hint?: string;
+            prompt?: string;
             callback: (resp: TokenResponse) => void;
             error_callback?: (err: { type: string; message?: string }) => void;
           }) => {
-            requestAccessToken: (opts?: { prompt?: string }) => void;
+            requestAccessToken: (opts?: { prompt?: string; hint?: string }) => void;
+          };
+          initCodeClient?: (config: {
+            client_id: string;
+            scope: string;
+            ux_mode?: 'popup' | 'redirect';
+            select_account?: boolean;
+            login_hint?: string;
+            include_granted_scopes?: boolean;
+            callback: (resp: CodeResponse) => void;
+            error_callback?: (err: { type: string; message?: string }) => void;
+          }) => {
+            requestCode: () => void;
           };
           revoke?: (token: string, done: () => void) => void;
         };
@@ -67,6 +97,7 @@ interface GooglePickerBuilder {
 
 let cachedAccessToken: string | null = null;
 let cachedTokenExpiresAt = 0;
+let activeRefreshPromise: Promise<string> | null = null;
 
 export function sanitizeGoogleClientId(raw: string): string {
   return raw
@@ -75,8 +106,104 @@ export function sanitizeGoogleClientId(raw: string): string {
     .replace(/\s+/g, '');
 }
 
+export function getStoredGoogleClientSecret(): string {
+  try {
+    return (localStorage.getItem(CLIENT_SECRET_STORAGE_KEY) ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
+export function setStoredGoogleClientSecret(rawSecret: string): void {
+  const clean = rawSecret.trim();
+  try {
+    if (clean) {
+      localStorage.setItem(CLIENT_SECRET_STORAGE_KEY, clean);
+    } else {
+      localStorage.removeItem(CLIENT_SECRET_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function loadStoredRefreshToken(clientId?: string): { refreshToken: string; clientId: string } | null {
+  try {
+    const raw = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { refreshToken?: string; clientId?: string };
+    if (!parsed.refreshToken) return null;
+    if (clientId && parsed.clientId && parsed.clientId !== sanitizeGoogleClientId(clientId)) {
+      return null;
+    }
+    return {
+      refreshToken: parsed.refreshToken,
+      clientId: parsed.clientId ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistRefreshToken(refreshToken: string, clientId: string): void {
+  try {
+    localStorage.setItem(
+      REFRESH_TOKEN_STORAGE_KEY,
+      JSON.stringify({
+        refreshToken,
+        clientId: sanitizeGoogleClientId(clientId),
+        updatedAt: Date.now(),
+      }),
+    );
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function clearStoredRefreshToken(): void {
+  try {
+    localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function hasPersistentGoogleSession(clientId?: string): boolean {
+  const secret = getStoredGoogleClientSecret();
+  if (!secret) return false;
+  return loadStoredRefreshToken(clientId) !== null;
+}
+
+export function getConnectedGoogleAccount(): ConnectedGoogleAccount | null {
+  try {
+    const raw = localStorage.getItem(ACCOUNT_HINT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { email?: string; displayName?: string };
+    if (!parsed.email) return null;
+    return { email: parsed.email, displayName: parsed.displayName };
+  } catch {
+    return null;
+  }
+}
+
+function persistConnectedGoogleAccount(account: ConnectedGoogleAccount): void {
+  try {
+    localStorage.setItem(ACCOUNT_HINT_STORAGE_KEY, JSON.stringify(account));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function clearConnectedGoogleAccount(): void {
+  try {
+    localStorage.removeItem(ACCOUNT_HINT_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 function loadCachedTokenFromStorage(): { token: string; expiresAt: number } | null {
-  if (cachedAccessToken && Date.now() < cachedTokenExpiresAt - 30_000) {
+  if (cachedAccessToken && Date.now() < cachedTokenExpiresAt - 60_000) {
     return { token: cachedAccessToken, expiresAt: cachedTokenExpiresAt };
   }
   try {
@@ -87,7 +214,7 @@ function loadCachedTokenFromStorage(): { token: string; expiresAt: number } | nu
       parsed.token &&
       parsed.expiresAt &&
       parsed.scope === DRIVE_SCOPE &&
-      Date.now() < parsed.expiresAt - 30_000
+      Date.now() < parsed.expiresAt - 60_000
     ) {
       cachedAccessToken = parsed.token;
       cachedTokenExpiresAt = parsed.expiresAt;
@@ -115,6 +242,49 @@ function persistToken(token: string, expiresInSeconds: number): void {
 
 export function hasValidCachedGoogleToken(): boolean {
   return loadCachedTokenFromStorage() !== null;
+}
+
+export function getCachedGoogleTokenExpiresAt(): number {
+  return loadCachedTokenFromStorage()?.expiresAt ?? 0;
+}
+
+function clearCachedAccessTokenOnly(): void {
+  cachedAccessToken = null;
+  cachedTokenExpiresAt = 0;
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+async function fetchAndCacheGoogleAccountInfo(token: string): Promise<ConnectedGoogleAccount | null> {
+  try {
+    const resp = await fetch(`${DRIVE_API_BASE}/about?fields=user(emailAddress,displayName)`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as {
+      user?: { emailAddress?: string; displayName?: string };
+    };
+    const email = data.user?.emailAddress?.trim();
+    if (!email) return null;
+    const info: ConnectedGoogleAccount = {
+      email,
+      displayName: data.user?.displayName?.trim() || undefined,
+    };
+    persistConnectedGoogleAccount(info);
+    return info;
+  } catch {
+    return null;
+  }
+}
+
+function ensureAccountHintPopulated(token: string): void {
+  if (!getConnectedGoogleAccount()) {
+    void fetchAndCacheGoogleAccountInfo(token);
+  }
 }
 
 function loadExternalScript(src: string): Promise<void> {
@@ -162,9 +332,183 @@ export class GoogleAuthRequiredError extends Error {
   }
 }
 
+interface OAuthTokenEndpointSuccess {
+  access_token?: string;
+  expires_in?: number;
+  refresh_token?: string;
+  scope?: string;
+  error?: string;
+  error_description?: string;
+}
+
+async function refreshAccessTokenWithGoogle(
+  cleanClientId: string,
+  cleanClientSecret: string,
+  refreshToken: string,
+): Promise<string> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
+  }
+
+  activeRefreshPromise = (async () => {
+    const resp = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: cleanClientId,
+        client_secret: cleanClientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    const data = (await resp.json().catch(() => ({}))) as OAuthTokenEndpointSuccess;
+    if (!resp.ok || !data.access_token) {
+      if (
+        data.error === 'invalid_grant' ||
+        data.error === 'unauthorized_client' ||
+        data.error === 'invalid_client'
+      ) {
+        clearStoredRefreshToken();
+        throw new GoogleAuthRequiredError(
+          'A autorização permanente Google expirou ou foi revogada. Toca em Sincronizar para renovar.',
+        );
+      }
+      throw new Error(data.error_description || data.error || `Erro ao renovar sessão Google (${resp.status}).`);
+    }
+
+    persistToken(data.access_token, data.expires_in ?? 3600);
+    if (data.refresh_token) {
+      persistRefreshToken(data.refresh_token, cleanClientId);
+    }
+    ensureAccountHintPopulated(data.access_token);
+    return data.access_token;
+  })().finally(() => {
+    activeRefreshPromise = null;
+  });
+
+  return activeRefreshPromise;
+}
+
+async function exchangeAuthCodeWithGoogle(
+  cleanClientId: string,
+  cleanClientSecret: string,
+  code: string,
+): Promise<string> {
+  const resp = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: cleanClientId,
+      client_secret: cleanClientSecret,
+      redirect_uri: 'postmessage',
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const data = (await resp.json().catch(() => ({}))) as OAuthTokenEndpointSuccess;
+  if (!resp.ok || !data.access_token) {
+    throw new GoogleAuthRequiredError(
+      data.error_description ||
+        data.error ||
+        `Falha ao obter sessão permanente Google (${resp.status}). Verifica o Client Secret nas Definições.`,
+    );
+  }
+
+  if (data.scope && !data.scope.split(/\s+/).includes(DRIVE_SCOPE)) {
+    throw new GoogleAuthRequiredError(
+      'Falta marcar a caixa de permissão do Google Drive no ecrã da Google. Toca em Sincronizar e ativa a seleção do Drive.',
+    );
+  }
+
+  persistToken(data.access_token, data.expires_in ?? 3600);
+  if (data.refresh_token) {
+    persistRefreshToken(data.refresh_token, cleanClientId);
+  }
+  await fetchAndCacheGoogleAccountInfo(data.access_token);
+  return data.access_token;
+}
+
+function requestCodeAndExchangeWithLoadedGis(
+  cleanClientId: string,
+  cleanClientSecret: string,
+  loginHint?: string,
+  forceAccountSelect = false,
+): Promise<string> {
+  const initCodeClient = window.google?.accounts?.oauth2?.initCodeClient;
+  if (!initCodeClient) {
+    return requestTokenWithLoadedGis(cleanClientId, true, loginHint);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(
+        new GoogleAuthRequiredError(
+          'O login Google demorou demasiado ou o pop-up foi bloqueado. Permite pop-ups e tenta novamente.',
+        ),
+      );
+    }, 60_000);
+
+    const finishResolve = (token: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(token);
+    };
+
+    const finishReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      reject(err);
+    };
+
+    const client = initCodeClient({
+      client_id: cleanClientId,
+      scope: DRIVE_SCOPE,
+      ux_mode: 'popup',
+      select_account: forceAccountSelect || !loginHint,
+      ...(loginHint && !forceAccountSelect ? { login_hint: loginHint } : {}),
+      callback: (resp) => {
+        if (resp.error || !resp.code) {
+          finishReject(
+            new GoogleAuthRequiredError(resp.error_description ?? resp.error ?? 'Autorização Google cancelada.'),
+          );
+          return;
+        }
+        if (resp.scope && !resp.scope.split(/\s+/).includes(DRIVE_SCOPE)) {
+          finishReject(
+            new GoogleAuthRequiredError(
+              'Falta marcar a caixa de permissão do Google Drive no ecrã da Google. Toca em Sincronizar e ativa a seleção do Drive.',
+            ),
+          );
+          return;
+        }
+        exchangeAuthCodeWithGoogle(cleanClientId, cleanClientSecret, resp.code)
+          .then(finishResolve)
+          .catch((err) => finishReject(err instanceof Error ? err : new Error('Erro na troca de token Google.')));
+      },
+      error_callback: (err) => {
+        finishReject(
+          new GoogleAuthRequiredError(
+            err.message ?? `Autenticação Google (${err.type}). Verifica se os pop-ups estão ativos.`,
+          ),
+        );
+      },
+    });
+
+    client.requestCode();
+  });
+}
+
 function requestTokenWithLoadedGis(
   cleanClientId: string,
   interactive: boolean,
+  loginHint?: string,
 ): Promise<string> {
   const oauth2 = window.google?.accounts?.oauth2;
   if (!oauth2) {
@@ -203,6 +547,7 @@ function requestTokenWithLoadedGis(
     const client = oauth2.initTokenClient({
       client_id: cleanClientId,
       scope: DRIVE_SCOPE,
+      ...(loginHint ? { login_hint: loginHint } : {}),
       callback: (resp) => {
         if (resp.error || !resp.access_token) {
           finishReject(
@@ -219,6 +564,7 @@ function requestTokenWithLoadedGis(
           return;
         }
         persistToken(resp.access_token, resp.expires_in);
+        ensureAccountHintPopulated(resp.access_token);
         finishResolve(resp.access_token);
       },
       error_callback: (err) => {
@@ -231,42 +577,80 @@ function requestTokenWithLoadedGis(
     });
 
     // Trigger synchronously when possible to preserve mobile browser user gesture
-    client.requestAccessToken({ prompt: interactive ? '' : 'none' });
+    client.requestAccessToken({
+      prompt: interactive ? '' : 'none',
+      ...(loginHint ? { hint: loginHint } : {}),
+    });
   });
 }
 
 export async function ensureGoogleAccessToken(
   clientId: string,
   interactive = true,
+  options?: { forceReauth?: boolean },
 ): Promise<string> {
   const cleanClientId = sanitizeGoogleClientId(clientId);
   if (!cleanClientId) {
     throw new Error('Configura primeiro o Google OAuth Client ID nas Definições.');
   }
 
-  const cached = loadCachedTokenFromStorage();
-  if (cached) {
-    return cached.token;
+  const forceReauth = Boolean(options?.forceReauth);
+  if (!forceReauth) {
+    const cached = loadCachedTokenFromStorage();
+    if (cached) {
+      ensureAccountHintPopulated(cached.token);
+      return cached.token;
+    }
+  }
+
+  const cleanClientSecret = getStoredGoogleClientSecret();
+  const storedRefresh = loadStoredRefreshToken(cleanClientId);
+
+  if (!forceReauth && cleanClientSecret && storedRefresh) {
+    try {
+      return await refreshAccessTokenWithGoogle(
+        cleanClientId,
+        cleanClientSecret,
+        storedRefresh.refreshToken,
+      );
+    } catch (err) {
+      if (!(err instanceof GoogleAuthRequiredError) || !interactive) {
+        throw err;
+      }
+      // If permanent refresh token was revoked/expired and user tapped interactively, fall through to interactive auth
+    }
+  }
+
+  const accountHint = getConnectedGoogleAccount()?.email;
+
+  if (interactive && cleanClientSecret) {
+    if (!window.google?.accounts?.oauth2) {
+      await loadExternalScript(GIS_SCRIPT_URL);
+    }
+    if (window.google?.accounts?.oauth2?.initCodeClient) {
+      return requestCodeAndExchangeWithLoadedGis(
+        cleanClientId,
+        cleanClientSecret,
+        accountHint,
+        forceReauth,
+      );
+    }
   }
 
   // Fast synchronous path if GIS script is already loaded (crucial for Android popup gesture)
   if (window.google?.accounts?.oauth2) {
-    return requestTokenWithLoadedGis(cleanClientId, interactive);
+    return requestTokenWithLoadedGis(cleanClientId, interactive, accountHint);
   }
 
   await loadExternalScript(GIS_SCRIPT_URL);
-  return requestTokenWithLoadedGis(cleanClientId, interactive);
+  return requestTokenWithLoadedGis(cleanClientId, interactive, accountHint);
 }
 
 export function clearCachedGoogleToken(): void {
   const token = cachedAccessToken;
-  cachedAccessToken = null;
-  cachedTokenExpiresAt = 0;
-  try {
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    // Ignore storage errors
-  }
+  clearCachedAccessTokenOnly();
+  clearStoredRefreshToken();
+  clearConnectedGoogleAccount();
   if (token && window.google?.accounts?.oauth2?.revoke) {
     window.google.accounts.oauth2.revoke(token, () => {});
   }
@@ -277,7 +661,8 @@ async function driveFetch(url: string, token: string, init?: RequestInit): Promi
   headers.set('Authorization', `Bearer ${token}`);
   const resp = await fetch(url, { ...init, headers, cache: 'no-store' });
   if (resp.status === 401) {
-    clearCachedGoogleToken();
+    // Only invalidate the 1h access_token so refresh_token & login_hint remain ready for auto-refresh
+    clearCachedAccessTokenOnly();
     throw new GoogleAuthRequiredError(
       'Sessão Google expirada. Clica novamente em Sincronizar para renovar.',
     );

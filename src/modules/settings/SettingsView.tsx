@@ -6,11 +6,14 @@ import {
   Cloud,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   FolderOpen,
   FolderPlus,
   HardDrive,
   HelpCircle,
   Info,
+  KeyRound,
   Layers,
   MapPin,
   Pencil,
@@ -35,8 +38,13 @@ import {
   clearCachedGoogleToken,
   ensureGoogleAccessToken,
   findOrCreateAppRootFolder,
+  getConnectedGoogleAccount,
+  getStoredGoogleClientSecret,
+  hasPersistentGoogleSession,
+  hasValidCachedGoogleToken,
   pickSharedFolderWithPicker,
   sanitizeGoogleClientId,
+  setStoredGoogleClientSecret,
 } from '../../sync/googleDriveSync';
 import { exportManualBackupJson, importManualBackupJson } from '../../sync/syncService';
 import { clearGoogleSyncLinked, markGoogleSyncLinked } from '../../sync/useAutoSync';
@@ -263,6 +271,9 @@ export function SettingsView({
     setOpenSection((prev) => (prev === id ? null : id));
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [clientId, setClientId] = useState(settings.googleClientId);
+  const [clientSecret, setClientSecret] = useState(() => getStoredGoogleClientSecret());
+  const [showSecret, setShowSecret] = useState(false);
+  const [, setSessionRev] = useState(0);
   const [pickerApiKey, setPickerApiKey] = useState(
     () => localStorage.getItem('gf_google_picker_key') ?? '',
   );
@@ -320,17 +331,20 @@ export function SettingsView({
     const parsedDays = Math.max(1, Math.min(60, Number(warningDays) || 5));
     const cleanClientId = sanitizeGoogleClientId(clientId);
     setClientId(cleanClientId);
+    setStoredGoogleClientSecret(clientSecret);
     localStorage.setItem('gf_google_picker_key', pickerApiKey.trim());
     await db.settings.update('singleton', {
       expiryWarningDays: parsedDays,
       googleClientId: cleanClientId,
     });
+    setSessionRev((n) => n + 1);
     flashSuccess('Definições guardadas localmente.');
   };
 
   const handleCreateOrFindFolder = async () => {
     const cleanClientId = sanitizeGoogleClientId(clientId);
     setClientId(cleanClientId);
+    setStoredGoogleClientSecret(clientSecret);
     setBusy(true);
     try {
       // Obtain token first to preserve mobile browser user-gesture activation
@@ -343,6 +357,7 @@ export function SettingsView({
       });
       markGoogleSyncLinked();
       setManualFolderId(folder.id);
+      setSessionRev((n) => n + 1);
       flashSuccess(`Pasta "${folder.name}" ligada (ID: ${folder.id.slice(0, 10)}…).`);
     } catch (err) {
       flashError(err);
@@ -354,6 +369,7 @@ export function SettingsView({
   const handlePickSharedFolder = async () => {
     const cleanClientId = sanitizeGoogleClientId(clientId);
     setClientId(cleanClientId);
+    setStoredGoogleClientSecret(clientSecret);
     localStorage.setItem('gf_google_picker_key', pickerApiKey.trim());
     setBusy(true);
     try {
@@ -369,6 +385,7 @@ export function SettingsView({
         setManualFolderId(picked.id);
         flashSuccess(`Pasta partilhada "${picked.name}" selecionada.`);
       }
+      setSessionRev((n) => n + 1);
     } catch (err) {
       flashError(err);
     } finally {
@@ -385,15 +402,46 @@ export function SettingsView({
     flashSuccess('ID da pasta atualizado.');
   };
 
+  const handleActivatePermanentSession = async () => {
+    const cleanClientId = sanitizeGoogleClientId(clientId);
+    setClientId(cleanClientId);
+    setStoredGoogleClientSecret(clientSecret);
+    setBusy(true);
+    try {
+      if (cleanClientId !== settings.googleClientId) {
+        await db.settings.update('singleton', { googleClientId: cleanClientId });
+      }
+      await ensureGoogleAccessToken(cleanClientId, true, { forceReauth: true });
+      markGoogleSyncLinked();
+      setSessionRev((n) => n + 1);
+      if (hasPersistentGoogleSession(cleanClientId)) {
+        const account = getConnectedGoogleAccount();
+        flashSuccess(
+          `Ligação permanente ativada${account ? ` para ${account.email}` : ''}! Já não precisas de relogar a cada hora.`,
+        );
+      } else {
+        flashSuccess(
+          'Conta ligada, mas a Google não devolveu token permanente (autorização antiga sem offline). Clica em "Terminar sessão Google" e volta a ativar.',
+        );
+      }
+    } catch (err) {
+      flashError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleSync = async () => {
     const cleanClientId = sanitizeGoogleClientId(clientId);
     setClientId(cleanClientId);
+    setStoredGoogleClientSecret(clientSecret);
     setBusy(true);
     try {
       if (cleanClientId !== settings.googleClientId) {
         await db.settings.update('singleton', { googleClientId: cleanClientId });
       }
       const summary = await onSyncNow();
+      setSessionRev((n) => n + 1);
       flashSuccess(summary);
     } catch (err) {
       flashError(err);
@@ -525,6 +573,11 @@ export function SettingsView({
       lastModifiedBy: settings.deviceId,
     });
   };
+
+  const connectedAccount = getConnectedGoogleAccount();
+  const cleanCurrentClientId = sanitizeGoogleClientId(clientId);
+  const hasPersistentSession = hasPersistentGoogleSession(cleanCurrentClientId);
+  const hasActiveAccessToken = hasValidCachedGoogleToken();
 
   return (
     <div className="space-y-3.5">
@@ -856,9 +909,13 @@ export function SettingsView({
               </li>
               <li>
                 No menu <strong>Google Auth Platform → Visão geral → Vamos começar</strong> (ou{' '}
-                <em>Branding</em> e <em>Público-alvo</em>): escolhe <em>Externo</em> (modo{' '}
-                <em>Em teste</em>) e, em <strong>Público-alvo → Utilizadores de teste</strong>,
-                adiciona os emails Gmail que vão usar a app (o teu e o do cônjuge).
+                <em>Branding</em> e <em>Público-alvo</em>): escolhe <em>Externo</em>. Para evitar que
+                o login expire aos <strong>7 dias</strong>, muda o estado em{' '}
+                <strong>Público-alvo → Publicar aplicativo</strong> para{' '}
+                <strong>Em produção</strong> (não precisa de verificação da Google para uso
+                familiar privado; no 1.º login basta tocar em{' '}
+                <em>Avançadas → Aceder a Gestão Familiar</em>). Se preferires manter{' '}
+                <em>Em teste</em>, adiciona os emails em <em>Utilizadores de teste</em>.
               </li>
               <li>
                 Em <strong>Google Auth Platform → Clientes → Criar cliente</strong> (
@@ -869,8 +926,11 @@ export function SettingsView({
               </li>
               <li>
                 Copia o <strong>ID do cliente</strong> (termina em{' '}
-                <code>.apps.googleusercontent.com</code>, <strong>sem</strong>{' '}
-                <code>https://</code> nem espaços) e cola-o abaixo → <em>Guardar definições</em>.
+                <code>.apps.googleusercontent.com</code>) e a{' '}
+                <strong>Chave secreta do cliente (Client Secret)</strong> (<code>GOCSPX-...</code>)
+                e cola ambos abaixo → <em>Guardar definições</em>. O{' '}
+                <em>Client Secret</em> permite renovar o acesso automaticamente sem pedir login a
+                cada hora.
               </li>
               <li>
                 <strong>1.º dispositivo:</strong> clica em{' '}
@@ -900,6 +960,37 @@ export function SettingsView({
           </div>
         )}
 
+        {/* Connected Google account status */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs">
+          <div className="min-w-0">
+            <p className="font-semibold text-slate-800">
+              {connectedAccount
+                ? `Conta ligada: ${connectedAccount.email}`
+                : 'Conta Google ainda não ligada neste dispositivo'}
+            </p>
+            <p className="text-[11px] text-slate-500">
+              {hasPersistentSession
+                ? 'Renovação automática ativa em segundo plano (sem relogar a cada hora).'
+                : hasActiveAccessToken
+                  ? clientSecret.trim()
+                    ? 'Sessão temporária (~1h). Toca em "Ativar ligação permanente" para não voltar a pedir login.'
+                    : 'Sessão temporária (~1h). Adiciona o Client Secret abaixo para login automático permanente.'
+                  : 'Toca em Sincronizar ou Ativar ligação permanente para autenticar.'}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+              hasPersistentSession
+                ? 'bg-emerald-100 text-emerald-800'
+                : hasActiveAccessToken
+                  ? 'bg-sky-100 text-sky-800'
+                  : 'bg-slate-200 text-slate-600'
+            }`}
+          >
+            {hasPersistentSession ? 'Permanente' : hasActiveAccessToken ? 'Temporária (1h)' : 'Desligada'}
+          </span>
+        </div>
+
         <form onSubmit={handleSaveGeneral} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
@@ -927,6 +1018,37 @@ export function SettingsView({
                 placeholder="123456789-xxxxx.apps.googleusercontent.com"
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
               />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="google-client-secret"
+              className="mb-1 block text-xs font-semibold text-slate-600"
+            >
+              Google OAuth Client Secret{' '}
+              <span className="font-normal text-slate-400">
+                (opcional, recomendado para login automático permanente)
+              </span>
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                id="google-client-secret"
+                type={showSecret ? 'text' : 'password'}
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+                placeholder="GOCSPX-... (guardado apenas neste dispositivo)"
+                autoComplete="off"
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret((prev) => !prev)}
+                aria-label={showSecret ? 'Ocultar Client Secret' : 'Mostrar Client Secret'}
+                className="rounded-xl border border-slate-200 bg-white px-2.5 text-slate-500 hover:bg-slate-50"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
           </div>
 
@@ -1000,11 +1122,23 @@ export function SettingsView({
               <RefreshCw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
               Sincronizar agora
             </button>
+            {clientId.trim() && clientSecret.trim() && !hasPersistentSession && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleActivatePermanentSession}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                <KeyRound className="h-4 w-4 text-emerald-700" />
+                Ativar ligação permanente
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 clearCachedGoogleToken();
                 clearGoogleSyncLinked();
+                setSessionRev((n) => n + 1);
                 flashSuccess('Sessão Google limpa neste dispositivo.');
               }}
               className="rounded-xl px-3 py-2 text-xs text-slate-500 hover:bg-slate-100"

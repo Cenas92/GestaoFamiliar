@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { db } from '../db/database';
 import type { AppSettings } from '../types/domain';
 import {
+  getCachedGoogleTokenExpiresAt,
   GoogleAuthRequiredError,
+  hasPersistentGoogleSession,
   hasValidCachedGoogleToken,
   preloadGoogleScripts,
 } from './googleDriveSync';
@@ -75,7 +77,8 @@ export function useAutoSync(settings: AppSettings | undefined) {
     const everLinked =
       Boolean(current.lastSyncAt) ||
       localStorage.getItem(LINKED_FLAG_KEY) === '1' ||
-      hasValidCachedGoogleToken();
+      hasValidCachedGoogleToken() ||
+      hasPersistentGoogleSession(current.googleClientId);
     if (!everLinked) {
       setPhase('needs_auth');
       return;
@@ -192,6 +195,22 @@ export function useAutoSync(settings: AppSettings | undefined) {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [isConfigured, executeBackgroundSync]);
+
+  // Proactively refresh token ~4 min before 1h expiry while app stays open & visible
+  useEffect(() => {
+    if (!isConfigured || phase !== 'ok') return;
+    const expiresAt = getCachedGoogleTokenExpiresAt();
+    if (!expiresAt) return;
+
+    const refreshDelayMs = Math.max(60_000, expiresAt - Date.now() - 4 * 60_000);
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void executeBackgroundSync();
+      }
+    }, refreshDelayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [isConfigured, phase, executeBackgroundSync]);
 
   const triggerManualSync = useCallback(async (): Promise<string> => {
     const current = settingsRef.current;

@@ -14,7 +14,6 @@ import {
   ShoppingCart,
   Sparkles,
   WifiOff,
-  X,
 } from 'lucide-react';
 import { APP_INFO } from './appInfo';
 import { useFamilyData } from './hooks/useFamilyData';
@@ -64,7 +63,6 @@ export function App() {
   const [plannerWeekStart, setPlannerWeekStart] = useState(() => getWeekStartMonday());
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
-  const [dismissedAuthBanner, setDismissedAuthBanner] = useState(false);
 
   const handleChangeUiDensity = (nextMode: UiDensityMode) => {
     switchUiDensityMode(nextMode);
@@ -72,12 +70,6 @@ export function App() {
   };
 
   const autoSync = useAutoSync(data.settings);
-
-  useEffect(() => {
-    if (autoSync.phase === 'ok') {
-      setDismissedAuthBanner(false);
-    }
-  }, [autoSync.phase]);
 
   const handlePullRefresh = async () => {
     setHeaderNotice(null);
@@ -446,31 +438,6 @@ export function App() {
             </button>
           </div>
         </div>
-
-        {isOnline &&
-          autoSync.isConfigured &&
-          autoSync.phase === 'needs_auth' &&
-          !dismissedAuthBanner &&
-          !headerNotice && (
-            <div className="flex items-center justify-center gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-900">
-              <button
-                type="button"
-                onClick={handleHeaderSyncClick}
-                className="inline-flex items-center gap-1.5 text-left underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-              >
-                <CloudAlert className="h-3.5 w-3.5 shrink-0 text-amber-700" />
-                <span>Sessão Google por atualizar — toca aqui para sincronizar a conta.</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setDismissedAuthBanner(true)}
-                aria-label="Fechar aviso"
-                className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
 
         {headerNotice && (
           <div
