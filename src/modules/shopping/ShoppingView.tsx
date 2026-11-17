@@ -9,7 +9,6 @@ import {
   PackageCheck,
   Pencil,
   Plus,
-  Search,
   ShoppingBag,
   SlidersHorizontal,
   Trash2,
@@ -18,6 +17,7 @@ import {
 import { CatalogPicker } from '../../components/CatalogPicker';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
 import { Modal } from '../../components/Modal';
+import { SearchInput } from '../../components/SearchInput';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
 import { UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
@@ -980,29 +980,12 @@ export function ShoppingView({
 
       {/* Search + Collapsible Filters toggle */}
       <div className="flex items-center gap-1.5">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400"
-            aria-hidden="true"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Pesquisar item ou nota..."
-            className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs sm:text-sm outline-none focus:border-teal-600"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              aria-label="Limpar pesquisa"
-              className="absolute right-2 top-1.5 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          size="sm"
+          value={search}
+          onChange={setSearch}
+          placeholder="Pesquisar item ou nota..."
+        />
 
         <button
           type="button"

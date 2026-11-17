@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/Modal';
+import { SearchInput } from '../../components/SearchInput';
 import { CATALOG_CATEGORY_LABELS, UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
 import type {
@@ -289,16 +290,12 @@ export function CatalogManagerModal({
       ) : (
         <div className="space-y-3">
           <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Pesquisar no catálogo..."
-                className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-teal-600"
-              />
-            </div>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Pesquisar no catálogo..."
+              wrapperClassName="flex-1"
+            />
             <button
               type="button"
               onClick={startNew}

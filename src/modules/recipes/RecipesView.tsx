@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Clock,
   Plus,
-  Search,
   SlidersHorizontal,
   Snowflake,
   Sparkles,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 import { AttachmentImage } from '../../components/AttachmentPreview';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
+import { SearchInput } from '../../components/SearchInput';
 import { TypeIconBadge, type TypeVisualMeta } from '../../components/TypeIconBadge';
 import { RECIPE_CATEGORY_LABELS } from '../../constants/labels';
 import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
@@ -615,29 +615,12 @@ export function RecipesView({
 
       {/* Search + Collapsible Filters & View toggle */}
       <div className="flex items-center gap-1.5">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400"
-            aria-hidden="true"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Pesquisar receita, ingrediente ou tag..."
-            className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs sm:text-sm outline-none focus:border-teal-600"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              aria-label="Limpar pesquisa"
-              className="absolute right-2 top-1.5 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          size="sm"
+          value={search}
+          onChange={setSearch}
+          placeholder="Pesquisar receita, ingrediente ou tag..."
+        />
 
         <button
           type="button"

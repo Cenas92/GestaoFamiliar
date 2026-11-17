@@ -7,7 +7,6 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
-  Search,
   ShoppingCart,
   SlidersHorizontal,
   Snowflake,
@@ -15,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
+import { SearchInput } from '../../components/SearchInput';
 import {
   CATALOG_CATEGORY_LABELS,
   LOCATION_COLOR_CLASSES,
@@ -926,26 +926,12 @@ export function StockView({
 
       {/* Search + Collapsible Filters toggle */}
       <div className="flex items-center gap-1.5">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Pesquisar produto ou nota..."
-            className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs sm:text-sm outline-none focus:border-teal-600"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              aria-label="Limpar pesquisa"
-              className="absolute right-2 top-1.5 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          size="sm"
+          value={search}
+          onChange={setSearch}
+          placeholder="Pesquisar produto ou nota..."
+        />
 
         <button
           type="button"

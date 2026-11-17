@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { SearchInput } from './SearchInput';
 import { CATALOG_CATEGORY_LABELS, UNITS } from '../constants/labels';
 import { db } from '../db/database';
 import type {
@@ -93,21 +94,22 @@ export function CatalogPicker({
 
   return (
     <div className="relative">
-      <div className="relative flex items-center">
-        <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400" />
-        <input
-          type="text"
-          value={query}
-          onFocus={() => setFocused(true)}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setFocused(true);
-            setCreating(false);
-          }}
-          placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15"
-        />
-      </div>
+      <SearchInput
+        value={query}
+        onFocus={() => setFocused(true)}
+        onChange={(nextValue) => {
+          setQuery(nextValue);
+          setFocused(true);
+          setCreating(false);
+        }}
+        onClear={() => {
+          setFocused(true);
+          setCreating(false);
+        }}
+        placeholder={placeholder}
+        wrapperClassName="w-full"
+        inputClassName="py-2.5"
+      />
 
       {focused && (
         <div className="mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">

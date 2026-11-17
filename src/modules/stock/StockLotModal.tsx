@@ -82,8 +82,9 @@ export function StockLotModal({
   const showSecondaryDate = isLeftover || isFreezerLocation;
 
   const handleSelectCatalog = (item: CatalogItem) => {
+    const prevCatalog = catalogItems.find((c) => c.id === catalogItemId);
     setCatalogItemId(item.id);
-    if (!productLabel.trim()) {
+    if (!productLabel.trim() || productLabel === prevCatalog?.name) {
       setProductLabel(item.name);
     }
     setUnit(item.defaultUnit);
