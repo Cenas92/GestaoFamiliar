@@ -1,5 +1,6 @@
 import type {
   CatalogItem,
+  PackageUnit,
   QualitativeLevel,
   StockLot,
   StorageLocation,
@@ -7,10 +8,10 @@ import type {
 } from '../../types/domain';
 import { createId, nowIso } from '../../utils/id';
 import {
-  convertQuantity,
+  convertAmountToLotUnit,
   daysBetweenDateStrings,
-  getUnitDimension,
-  toBaseUnit,
+  formatQuantity,
+  getLotTotalInUnit,
   todayDateString,
 } from '../../utils/units';
 
@@ -62,7 +63,6 @@ export function summarizeCatalogStock(
     (l) => !l.deletedAt && l.catalogItemId === catalogItem.id,
   );
 
-  const defaultDim = getUnitDimension(catalogItem.defaultUnit);
   let totalExactInDefaultUnit = 0;
   let hasMixedDimensions = false;
   let bestQual: QualitativeLevel = 'empty';
@@ -83,12 +83,9 @@ export function summarizeCatalogStock(
       if (level === 'full') bestQual = 'full';
       else if (level === 'low' && bestQual === 'empty') bestQual = 'low';
     } else if (lot.quantity !== null && lot.quantity > 0) {
-      const lotUnit = lot.unit ?? catalogItem.defaultUnit;
-      if (getUnitDimension(lotUnit) === defaultDim) {
-        const converted = convertQuantity(lot.quantity, lotUnit, catalogItem.defaultUnit);
-        if (converted !== null) {
-          totalExactInDefaultUnit += converted;
-        }
+      const converted = getLotTotalInUnit(lot, catalogItem.defaultUnit, catalogItem.defaultUnit);
+      if (converted !== null) {
+        totalExactInDefaultUnit += converted;
       } else {
         hasMixedDimensions = true;
       }
@@ -134,7 +131,10 @@ export interface DeductionPlanItem {
   productLabel: string;
   currentQuantity: number;
   currentUnit: Unit;
+  packageSize: number | null;
+  packageUnit: PackageUnit | null;
   deductInLotUnit: number;
+  deductEquivalent: string | null;
   remainingInLotUnit: number;
 }
 
@@ -147,14 +147,11 @@ export function planLotDeduction(
   targetQuantity: number,
   targetUnit: Unit,
 ): { plan: DeductionPlanItem[]; unfulfilledInTargetUnit: number } {
-  const targetDim = getUnitDimension(targetUnit);
-  const targetBase = toBaseUnit(targetQuantity, targetUnit).value;
-
   const eligibleLots = lots
     .filter((lot) => {
       if (lot.deletedAt) return false;
       if (lot.quantity === null || lot.quantity <= 0 || !lot.unit) return false;
-      return getUnitDimension(lot.unit) === targetDim;
+      return getLotTotalInUnit(lot, targetUnit) !== null;
     })
     .sort((a, b) => {
       // Non-null earliest expiry first (FEFO), then non-freezer before freezer, then oldest created
@@ -171,48 +168,51 @@ export function planLotDeduction(
       return a.createdAt.localeCompare(b.createdAt);
     });
 
-  let remainingBase = targetBase;
+  let remainingInTarget = targetQuantity;
   const plan: DeductionPlanItem[] = [];
 
   for (const lot of eligibleLots) {
-    if (remainingBase <= 0.0001) break;
+    if (remainingInTarget <= 0.0001) break;
     const lotUnit = lot.unit!;
     const lotQty = lot.quantity!;
-    const lotBase = toBaseUnit(lotQty, lotUnit).value;
+    const lotAvailInTarget = getLotTotalInUnit(lot, targetUnit);
+    if (lotAvailInTarget === null || lotAvailInTarget <= 0) continue;
 
-    const takeBase = Math.min(lotBase, remainingBase);
-    const deductInLotUnit = convertQuantity(
-      takeBase,
-      targetDim === 'mass' ? 'g' : targetDim === 'volume' ? 'ml' : 'un',
-      lotUnit,
-    )!;
+    const takeInTarget = Math.min(lotAvailInTarget, remainingInTarget);
+    const deductRaw = convertAmountToLotUnit(takeInTarget, targetUnit, lot);
+    if (deductRaw === null || deductRaw <= 0) continue;
 
+    const deductInLotUnit = Math.min(lotQty, Math.round(deductRaw * 1000) / 1000);
     const remainingInLotUnit = Math.max(0, Math.round((lotQty - deductInLotUnit) * 1000) / 1000);
+    const pkgSize = lot.packageSize ?? null;
+    const pkgUnit = lot.packageUnit ?? null;
+    const deductEquivalent =
+      lotUnit === 'un' && pkgSize && pkgSize > 0 && pkgUnit
+        ? formatQuantity(deductInLotUnit * pkgSize, pkgUnit)
+        : null;
+
     plan.push({
       lotId: lot.id,
       locationName: locationsById.get(lot.locationId)?.name ?? 'Outro',
       productLabel: lot.productLabel,
       currentQuantity: lotQty,
       currentUnit: lotUnit,
-      deductInLotUnit: Math.round(deductInLotUnit * 1000) / 1000,
+      packageSize: pkgSize,
+      packageUnit: pkgUnit,
+      deductInLotUnit,
+      deductEquivalent,
       remainingInLotUnit,
     });
 
-    remainingBase -= takeBase;
+    remainingInTarget = Math.max(0, remainingInTarget - takeInTarget);
   }
 
   const unfulfilledInTargetUnit =
-    remainingBase <= 0.0001
-      ? 0
-      : convertQuantity(
-          remainingBase,
-          targetDim === 'mass' ? 'g' : targetDim === 'volume' ? 'ml' : 'un',
-          targetUnit,
-        )!;
+    remainingInTarget <= 0.0001 ? 0 : Math.round(remainingInTarget * 100) / 100;
 
   return {
     plan,
-    unfulfilledInTargetUnit: Math.round(unfulfilledInTargetUnit * 100) / 100,
+    unfulfilledInTargetUnit,
   };
 }
 
@@ -228,7 +228,7 @@ export function applyLotDeductions(
     .filter((lot) => planMap.has(lot.id))
     .map((lot) => {
       const item = planMap.get(lot.id)!;
-      const shouldDelete = item.remainingInLotUnit <= 0.0001;
+      const shouldDelete = item.remainingInLotUnit <= 0.001;
       return {
         ...lot,
         quantity: shouldDelete ? 0 : item.remainingInLotUnit,
@@ -239,6 +239,37 @@ export function applyLotDeductions(
     });
 }
 
+export function findMergeableStockLot(
+  lots: StockLot[],
+  candidate: {
+    catalogItemId: string;
+    locationId: string;
+    unit: Unit;
+    packageSize?: number | null;
+    packageUnit?: PackageUnit | null;
+    expiresAt?: string | null;
+  },
+): StockLot | undefined {
+  const targetPkgSize =
+    candidate.unit === 'un' && candidate.packageSize && candidate.packageSize > 0
+      ? candidate.packageSize
+      : null;
+  const targetPkgUnit = targetPkgSize ? (candidate.packageUnit ?? null) : null;
+  const targetExpiry = candidate.expiresAt || null;
+
+  return lots.find((lot) => {
+    if (lot.deletedAt || lot.isLeftover) return false;
+    if (lot.catalogItemId !== candidate.catalogItemId) return false;
+    if (lot.locationId !== candidate.locationId) return false;
+    if (lot.unit !== candidate.unit) return false;
+    const lotPkgSize =
+      lot.unit === 'un' && lot.packageSize && lot.packageSize > 0 ? lot.packageSize : null;
+    const lotPkgUnit = lotPkgSize ? (lot.packageUnit ?? null) : null;
+    if (lotPkgSize !== targetPkgSize || lotPkgUnit !== targetPkgUnit) return false;
+    return (lot.expiresAt || null) === targetExpiry;
+  });
+}
+
 export function buildNewStockLot(
   params: {
     catalogItemId: string;
@@ -246,6 +277,8 @@ export function buildNewStockLot(
     locationId: string;
     quantity: number | null;
     unit: Unit | null;
+    packageSize?: number | null;
+    packageUnit?: PackageUnit | null;
     qualitativeLevel: QualitativeLevel | null;
     expiresAt?: string | null;
     frozenOrCookedAt?: string | null;
@@ -256,6 +289,12 @@ export function buildNewStockLot(
   deviceId: string,
 ): StockLot {
   const now = nowIso();
+  const hasPkg =
+    params.unit === 'un' &&
+    params.packageSize !== undefined &&
+    params.packageSize !== null &&
+    params.packageSize > 0 &&
+    Boolean(params.packageUnit);
   return {
     id: createId(),
     createdAt: now,
@@ -267,6 +306,8 @@ export function buildNewStockLot(
     locationId: params.locationId,
     quantity: params.quantity,
     unit: params.unit,
+    packageSize: hasPkg ? params.packageSize! : null,
+    packageUnit: hasPkg ? params.packageUnit! : null,
     qualitativeLevel: params.qualitativeLevel,
     expiresAt: params.expiresAt || null,
     frozenOrCookedAt: params.frozenOrCookedAt || null,

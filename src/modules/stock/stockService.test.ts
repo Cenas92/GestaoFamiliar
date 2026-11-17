@@ -3,6 +3,7 @@ import type { CatalogItem, StockLot, StorageLocation } from '../../types/domain'
 import {
   applyLotDeductions,
   buildNewStockLot,
+  findMergeableStockLot,
   getLotExpiryInfo,
   planLotDeduction,
   summarizeCatalogStock,
@@ -216,5 +217,84 @@ describe('stockService', () => {
     expect(depleted?.deletedAt).not.toBeNull();
     expect(partial?.deletedAt).toBeNull();
     expect(partial?.quantity).toBe(300);
+  });
+
+  it('summarizes and deducts proportionally across un × packageSize lots and distinguishes merge candidates', () => {
+    const tunaCatalog: CatalogItem = {
+      ...flourCatalog,
+      id: 'cat-tuna',
+      name: 'Atum',
+      defaultUnit: 'g',
+      minStockQty: 200,
+    };
+
+    const smallCans = buildNewStockLot(
+      {
+        catalogItemId: tunaCatalog.id,
+        productLabel: 'Atum em Azeite',
+        locationId: fridge.id,
+        quantity: 3,
+        unit: 'un',
+        packageSize: 85,
+        packageUnit: 'g',
+        qualitativeLevel: null,
+        expiresAt: '2027-02-01',
+      },
+      'dev-1',
+    );
+    const bigBag = buildNewStockLot(
+      {
+        catalogItemId: flourCatalog.id,
+        productLabel: 'Granola',
+        locationId: fridge.id,
+        quantity: 1,
+        unit: 'un',
+        packageSize: 1000,
+        packageUnit: 'g',
+        qualitativeLevel: null,
+      },
+      'dev-1',
+    );
+
+    const summary = summarizeCatalogStock(tunaCatalog, [smallCans], 5, '2026-11-15');
+    expect(summary.totalExactInDefaultUnit).toBe(255);
+    expect(summary.hasMixedDimensions).toBe(false);
+    expect(summary.isLowStock).toBe(false);
+
+    // Deduct 170 g from 3 × 85g -> exact 2 un deducted, 1 un left
+    const tunaPlan = planLotDeduction([smallCans], locationsMap, 170, 'g');
+    expect(tunaPlan.unfulfilledInTargetUnit).toBe(0);
+    expect(tunaPlan.plan[0].deductInLotUnit).toBe(2);
+    expect(tunaPlan.plan[0].deductEquivalent).toBe('170 g');
+    expect(tunaPlan.plan[0].remainingInLotUnit).toBe(1);
+
+    // Deduct 200 g from 1 × 1000g -> proportional 0.2 un deducted, 0.8 un left
+    const bagPlan = planLotDeduction([bigBag], locationsMap, 200, 'g');
+    expect(bagPlan.unfulfilledInTargetUnit).toBe(0);
+    expect(bagPlan.plan[0].deductInLotUnit).toBe(0.2);
+    expect(bagPlan.plan[0].remainingInLotUnit).toBe(0.8);
+
+    // findMergeableStockLot matches identical package size/expiry, rejects different package size
+    expect(
+      findMergeableStockLot([smallCans], {
+        catalogItemId: tunaCatalog.id,
+        locationId: fridge.id,
+        unit: 'un',
+        packageSize: 85,
+        packageUnit: 'g',
+        expiresAt: '2027-02-01',
+      })?.id,
+    ).toBe(smallCans.id);
+
+    expect(
+      findMergeableStockLot([smallCans], {
+        catalogItemId: tunaCatalog.id,
+        locationId: fridge.id,
+        unit: 'un',
+        packageSize: 120,
+        packageUnit: 'g',
+        expiresAt: '2027-02-01',
+      }),
+    ).toBeUndefined();
   });
 });

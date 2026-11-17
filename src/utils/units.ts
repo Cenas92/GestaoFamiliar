@@ -1,4 +1,4 @@
-import type { Unit } from '../types/domain';
+import type { PackageUnit, Unit } from '../types/domain';
 
 export type UnitDimension = 'mass' | 'volume' | 'count';
 
@@ -65,11 +65,111 @@ export function convertQuantity(quantity: number, fromUnit: Unit, toUnit: Unit):
   return fromBaseUnit(base.value, toUnit);
 }
 
+export function formatNumberCompact(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, '');
+}
+
 export function formatQuantity(quantity: number | null, unit: Unit | null): string {
   if (quantity === null || unit === null) return '';
-  const rounded = Math.round(quantity * 100) / 100;
   const unitLabel = unit === 'tbsp' ? 'c. sopa' : unit === 'tsp' ? 'c. chá' : unit;
-  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(2).replace(/\.?0+$/, '')} ${unitLabel}`;
+  return `${formatNumberCompact(quantity)} ${unitLabel}`;
+}
+
+export interface PackagedLotQuantityInput {
+  quantity: number | null;
+  unit: Unit | null;
+  packageSize?: number | null;
+  packageUnit?: PackageUnit | null;
+}
+
+/**
+ * Converts a stock/shopping item quantity into a target unit, using per-unit package size
+ * (e.g. `3 un × 85 g = 255 g`) when crossing between `un` and mass/volume dimensions.
+ */
+export function getLotTotalInUnit(
+  lot: PackagedLotQuantityInput,
+  targetUnit: Unit,
+  fallbackUnit?: Unit,
+): number | null {
+  if (lot.quantity === null || lot.quantity <= 0) return 0;
+  const lotUnit = lot.unit ?? fallbackUnit;
+  if (!lotUnit) return null;
+
+  if (getUnitDimension(lotUnit) === getUnitDimension(targetUnit)) {
+    return convertQuantity(lot.quantity, lotUnit, targetUnit);
+  }
+
+  const pkgSize = lot.packageSize;
+  const pkgUnit = lot.packageUnit;
+  if (!pkgSize || pkgSize <= 0 || !pkgUnit) return null;
+
+  if (lotUnit === 'un' && getUnitDimension(pkgUnit) === getUnitDimension(targetUnit)) {
+    return convertQuantity(lot.quantity * pkgSize, pkgUnit, targetUnit);
+  }
+
+  if (targetUnit === 'un' && getUnitDimension(lotUnit) === getUnitDimension(pkgUnit)) {
+    const inPkgUnit = convertQuantity(lot.quantity, lotUnit, pkgUnit);
+    return inPkgUnit !== null ? inPkgUnit / pkgSize : null;
+  }
+
+  return null;
+}
+
+/**
+ * Converts an amount expressed in `sourceUnit` back into `lot.unit`, accounting for
+ * optional per-package weight/volume when crossing between `un` and mass/volume.
+ */
+export function convertAmountToLotUnit(
+  amount: number,
+  sourceUnit: Unit,
+  lot: PackagedLotQuantityInput,
+): number | null {
+  if (!lot.unit) return null;
+  if (getUnitDimension(sourceUnit) === getUnitDimension(lot.unit)) {
+    return convertQuantity(amount, sourceUnit, lot.unit);
+  }
+
+  const pkgSize = lot.packageSize;
+  const pkgUnit = lot.packageUnit;
+  if (!pkgSize || pkgSize <= 0 || !pkgUnit) return null;
+
+  if (lot.unit === 'un' && getUnitDimension(sourceUnit) === getUnitDimension(pkgUnit)) {
+    const inPkgUnit = convertQuantity(amount, sourceUnit, pkgUnit);
+    return inPkgUnit !== null ? inPkgUnit / pkgSize : null;
+  }
+
+  if (sourceUnit === 'un' && getUnitDimension(lot.unit) === getUnitDimension(pkgUnit)) {
+    return convertQuantity(amount * pkgSize, pkgUnit, lot.unit);
+  }
+
+  return null;
+}
+
+/**
+ * Formats lot quantities concisely (e.g. `3 un × 85g`) alongside total equivalent (`255 g`).
+ */
+export function formatLotQuantity(
+  lot: PackagedLotQuantityInput,
+  fallbackUnit?: Unit,
+): { compactLabel: string; totalEquivalentLabel: string | null } {
+  const unit = lot.unit ?? fallbackUnit ?? null;
+  if (lot.quantity === null || unit === null) {
+    return { compactLabel: '', totalEquivalentLabel: null };
+  }
+
+  if (unit === 'un' && lot.packageSize && lot.packageSize > 0 && lot.packageUnit) {
+    const pkgText = `${formatNumberCompact(lot.packageSize)}${lot.packageUnit}`;
+    return {
+      compactLabel: `${formatQuantity(lot.quantity, 'un')} × ${pkgText}`,
+      totalEquivalentLabel: formatQuantity(lot.quantity * lot.packageSize, lot.packageUnit),
+    };
+  }
+
+  return {
+    compactLabel: formatQuantity(lot.quantity, unit),
+    totalEquivalentLabel: null,
+  };
 }
 
 export function formatUnitLabel(unit: Unit): string {

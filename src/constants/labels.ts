@@ -4,6 +4,7 @@ import type {
   LocationColorToken,
   LocationType,
   MealSlot,
+  PackageUnit,
   QualitativeLevel,
   RecipeCategory,
   SupermarketSection,
@@ -18,6 +19,13 @@ export const UNITS: { value: Unit; label: string }[] = [
   { value: 'L', label: 'L (litros)' },
   { value: 'tbsp', label: 'c. sopa (~15 ml)' },
   { value: 'tsp', label: 'c. chá (~5 ml)' },
+];
+
+export const PACKAGE_UNITS: { value: PackageUnit; label: string }[] = [
+  { value: 'g', label: 'g' },
+  { value: 'kg', label: 'kg' },
+  { value: 'ml', label: 'ml' },
+  { value: 'L', label: 'L' },
 ];
 
 export const QUALITATIVE_LABELS: Record<QualitativeLevel, string> = {

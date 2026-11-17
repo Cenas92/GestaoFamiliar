@@ -298,4 +298,78 @@ describe('matchingEngine', () => {
     expect(res.status).toBe('ready');
     expect(res.needsDefrost).toBe(false);
   });
+
+  it('evaluates recipe requirements in grams against stock tracked as un × packageSize', () => {
+    const tunaCat: CatalogItem = {
+      ...chickenCat,
+      id: 'cat-tuna',
+      name: 'Atum',
+      defaultUnit: 'un',
+      defaultPackageSize: 85,
+      defaultPackageUnit: 'g',
+      defaultLocationId: fridge.id,
+    };
+
+    const tunaRecipe: Recipe = {
+      ...sampleRecipe,
+      id: 'rec-tuna',
+      title: 'Salada de Atum',
+      baseServings: 2,
+      containsAllergens: [],
+      ingredients: [
+        {
+          id: 'ing-tuna',
+          catalogItemId: tunaCat.id,
+          customLabel: '',
+          quantity: 200,
+          unit: 'g',
+          toTaste: false,
+          isOptional: false,
+          substituteCatalogIds: [],
+        },
+      ],
+    };
+
+    const threeCans = buildNewStockLot(
+      {
+        catalogItemId: tunaCat.id,
+        productLabel: 'Atum Azeite',
+        locationId: fridge.id,
+        quantity: 3,
+        unit: 'un',
+        packageSize: 85,
+        packageUnit: 'g',
+        qualitativeLevel: null,
+      },
+      'dev-1',
+    );
+
+    const readyRes = evaluateRecipeMatch(
+      tunaRecipe,
+      2,
+      [threeCans],
+      [tunaCat],
+      [fridge],
+      [],
+      5,
+      '2026-11-15',
+    );
+    expect(readyRes.status).toBe('ready');
+    expect(readyRes.ingredientDetails[0].availableQuantity).toBe(255);
+    expect(readyRes.ingredientDetails[0].missingQuantity).toBe(0);
+
+    // Scaling to 4 servings requires 400 g -> 145 g missing
+    const scaledRes = evaluateRecipeMatch(
+      tunaRecipe,
+      4,
+      [threeCans],
+      [tunaCat],
+      [fridge],
+      [],
+      5,
+      '2026-11-15',
+    );
+    expect(scaledRes.status).toBe('almost');
+    expect(scaledRes.ingredientDetails[0].missingQuantity).toBe(145);
+  });
 });

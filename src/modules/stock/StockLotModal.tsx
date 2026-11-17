@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { CatalogPicker } from '../../components/CatalogPicker';
 import { Modal } from '../../components/Modal';
+import { PackageSizeFields } from '../../components/PackageSizeFields';
 import { QUALITATIVE_LABELS, UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
 import type {
   CatalogItem,
+  PackageUnit,
   QualitativeLevel,
   StockLot,
   StorageLocation,
@@ -41,6 +43,8 @@ export function StockLotModal({
   const [locationId, setLocationId] = useState(locations[0]?.id ?? '');
   const [quantity, setQuantity] = useState('1');
   const [unit, setUnit] = useState<Unit>('un');
+  const [packageSize, setPackageSize] = useState('');
+  const [packageUnit, setPackageUnit] = useState<PackageUnit>('g');
   const [qualitativeLevel, setQualitativeLevel] = useState<QualitativeLevel>('full');
   const [expiresAt, setExpiresAt] = useState('');
   const [frozenOrCookedAt, setFrozenOrCookedAt] = useState('');
@@ -57,6 +61,8 @@ export function StockLotModal({
       setLocationId(editingLot.locationId);
       setQuantity(editingLot.quantity !== null ? String(editingLot.quantity) : '1');
       setUnit(editingLot.unit ?? 'un');
+      setPackageSize(editingLot.packageSize ? String(editingLot.packageSize) : '');
+      setPackageUnit(editingLot.packageUnit ?? 'g');
       setQualitativeLevel(editingLot.qualitativeLevel ?? 'full');
       setExpiresAt(editingLot.expiresAt ?? '');
       setFrozenOrCookedAt(editingLot.frozenOrCookedAt ?? '');
@@ -68,6 +74,8 @@ export function StockLotModal({
       setLocationId(initialLocationId || locations[0]?.id || '');
       setQuantity('1');
       setUnit('un');
+      setPackageSize('');
+      setPackageUnit('g');
       setQualitativeLevel('full');
       setExpiresAt('');
       setFrozenOrCookedAt('');
@@ -88,6 +96,10 @@ export function StockLotModal({
       setProductLabel(item.name);
     }
     setUnit(item.defaultUnit);
+    if (!editingLot) {
+      setPackageSize(item.defaultPackageSize ? String(item.defaultPackageSize) : '');
+      setPackageUnit(item.defaultPackageUnit ?? 'g');
+    }
     if (!editingLot && item.defaultLocationId) {
       setLocationId(item.defaultLocationId);
       const loc = locations.find((l) => l.id === item.defaultLocationId);
@@ -129,6 +141,12 @@ export function StockLotModal({
 
     const finalLabel = productLabel.trim() || selectedCatalog.name;
     const effectiveSecondaryDate = showSecondaryDate && frozenOrCookedAt ? frozenOrCookedAt : null;
+    const parsedPkgSize = Number(packageSize.replace(',', '.'));
+    const hasPkg =
+      !isQualitative &&
+      unit === 'un' &&
+      Number.isFinite(parsedPkgSize) &&
+      parsedPkgSize > 0;
 
     if (editingLot) {
       const updated: StockLot = {
@@ -138,6 +156,8 @@ export function StockLotModal({
         locationId,
         quantity: isQualitative ? null : parsedQty,
         unit: isQualitative ? null : unit,
+        packageSize: hasPkg ? parsedPkgSize : null,
+        packageUnit: hasPkg ? packageUnit : null,
         qualitativeLevel: isQualitative ? qualitativeLevel : null,
         expiresAt: expiresAt || null,
         frozenOrCookedAt: effectiveSecondaryDate,
@@ -155,6 +175,8 @@ export function StockLotModal({
           locationId,
           quantity: isQualitative ? null : parsedQty,
           unit: isQualitative ? null : unit,
+          packageSize: hasPkg ? parsedPkgSize : null,
+          packageUnit: hasPkg ? packageUnit : null,
           qualitativeLevel: isQualitative ? qualitativeLevel : null,
           expiresAt: expiresAt || null,
           frozenOrCookedAt: effectiveSecondaryDate,
@@ -247,36 +269,48 @@ export function StockLotModal({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Quantidade *
-              </label>
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-600"
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Quantidade *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-600"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Unidade
+                </label>
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value as Unit)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-600"
+                >
+                  {UNITS.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {unit === 'un' && (
+              <PackageSizeFields
+                packageSize={packageSize}
+                packageUnit={packageUnit}
+                onChangeSize={setPackageSize}
+                onChangeUnit={setPackageUnit}
+                quantity={Number(quantity.replace(',', '.')) || null}
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Unidade
-              </label>
-              <select
-                value={unit}
-                onChange={(e) => setUnit(e.target.value as Unit)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-600"
-              >
-                {UNITS.map((u) => (
-                  <option key={u.value} value={u.value}>
-                    {u.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            )}
           </div>
         )}
 

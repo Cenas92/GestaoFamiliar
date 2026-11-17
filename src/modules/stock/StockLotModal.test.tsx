@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { db } from '../../db/database';
 import type { CatalogItem, StorageLocation } from '../../types/domain';
 import { CatalogManagerModal } from './CatalogManagerModal';
 import { StockLotModal } from './StockLotModal';
@@ -65,6 +66,10 @@ const CATALOG: CatalogItem[] = [
 ];
 
 describe('StockLotModal leftover date visibility', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('hides Data de preparação / sobras until Marcar como sobra is checked', () => {
     render(
       <StockLotModal
@@ -172,5 +177,46 @@ describe('StockLotModal leftover date visibility', () => {
     expect(catalogSearch.value).toBe('');
     expect(document.activeElement).toBe(catalogSearch);
     expect(screen.getByText('Abóbora')).toBeInTheDocument();
+  });
+
+  it('shows package size fields when unit is un, computes total live and saves packageSize/packageUnit to Dexie', async () => {
+    await db.stockLots.clear();
+    const onClose = vi.fn();
+
+    render(
+      <StockLotModal
+        open={true}
+        onClose={onClose}
+        editingLot={null}
+        catalogItems={CATALOG}
+        locations={LOCATIONS}
+        deviceId="dev-1"
+        initialLocationId="loc-fridge"
+      />,
+    );
+
+    const picker = screen.getByPlaceholderText('Procurar ingrediente ou produto...');
+    fireEvent.focus(picker);
+    fireEvent.click(screen.getByRole('button', { name: /Abóbora/i }));
+
+    // Quantity = 3, Package size = 85 g -> live total = 255 g
+    const qtyInput = screen.getByDisplayValue('1');
+    fireEvent.change(qtyInput, { target: { value: '3' } });
+
+    const pkgInput = screen.getByLabelText('Tamanho de cada un. (opcional)');
+    fireEvent.change(pkgInput, { target: { value: '85' } });
+    expect(screen.getByText('Total: 255 g')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Adicionar ao stock/i }));
+
+    await waitFor(async () => {
+      expect(onClose).toHaveBeenCalled();
+      const savedLots = await db.stockLots.toArray();
+      expect(savedLots).toHaveLength(1);
+      expect(savedLots[0].quantity).toBe(3);
+      expect(savedLots[0].unit).toBe('un');
+      expect(savedLots[0].packageSize).toBe(85);
+      expect(savedLots[0].packageUnit).toBe('g');
+    });
   });
 });

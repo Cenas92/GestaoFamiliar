@@ -9,6 +9,7 @@ import type {
 } from '../../types/domain';
 import {
   convertQuantity,
+  getLotTotalInUnit,
   getUnitDimension,
   normalizeText,
   toBaseUnit,
@@ -152,13 +153,14 @@ function evaluateCatalogCandidate(
   for (const l of lots) {
     if (l.quantity === null || l.quantity <= 0) continue;
     const lotUnit = l.unit ?? catalog.defaultUnit;
-    if (getUnitDimension(lotUnit) !== reqDim) {
+    const availableInReqUnit = getLotTotalInUnit(l, requiredUnit, catalog.defaultUnit);
+    if (availableInReqUnit === null) {
       mismatchNotes.push(`${l.quantity} ${lotUnit}`);
       analyzeLotMeta(l);
       continue;
     }
     analyzeLotMeta(l);
-    const baseVal = toBaseUnit(l.quantity, lotUnit).value;
+    const baseVal = toBaseUnit(availableInReqUnit, requiredUnit).value;
     const isFreezer = locationsMap.get(l.locationId)?.locationType === 'freezer';
     if (isFreezer) freezerBase += baseVal;
     else nonFreezerBase += baseVal;

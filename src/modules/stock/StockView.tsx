@@ -38,7 +38,7 @@ import { getSupermarketSectionLabel } from '../../utils/sectionVisuals';
 import {
   daysBetweenDateStrings,
   formatDatePt,
-  formatQuantity,
+  formatLotQuantity,
   getStepForUnit,
   normalizeText,
   todayDateString,
@@ -567,10 +567,14 @@ export function StockView({
       const sourceRecipeTitle = lot.sourceRecipeId
         ? recipesById.get(lot.sourceRecipeId)?.title ?? null
         : null;
-      const quantityLabel =
-        catalogItem?.trackingMode === 'qualitative'
-          ? QUALITATIVE_LABELS[lot.qualitativeLevel ?? 'full']
-          : formatQuantity(lot.quantity, lot.unit);
+      const { compactLabel, totalEquivalentLabel } = formatLotQuantity(
+        lot,
+        catalogItem?.defaultUnit,
+      );
+      const isQualitative = catalogItem?.trackingMode === 'qualitative';
+      const quantityLabel = isQualitative
+        ? QUALITATIVE_LABELS[lot.qualitativeLevel ?? 'full']
+        : compactLabel;
 
       return {
         lot,
@@ -584,6 +588,7 @@ export function StockView({
         isLowStock,
         sourceRecipeTitle,
         quantityLabel,
+        totalEquivalentLabel: isQualitative ? null : totalEquivalentLabel,
       };
     });
   }, [
@@ -639,9 +644,9 @@ export function StockView({
 
   const adjustQuantity = async (lot: StockLot, delta: number) => {
     const current = lot.quantity ?? 0;
-    const next = Math.max(0, Math.round((current + delta) * 100) / 100);
+    const next = Math.max(0, Math.round((current + delta) * 1000) / 1000);
     const now = nowIso();
-    if (next <= 0) {
+    if (next <= 0.0001) {
       await db.stockLots.put({
         ...lot,
         quantity: 0,
@@ -693,6 +698,8 @@ export function StockView({
         label: cat.name,
         quantity: cat.minStockQty && cat.trackingMode === 'exact' ? cat.minStockQty : 1,
         unit: cat.trackingMode === 'qualitative' ? 'un' : cat.defaultUnit,
+        packageSize: cat.defaultUnit === 'un' ? (cat.defaultPackageSize ?? null) : null,
+        packageUnit: cat.defaultUnit === 'un' ? (cat.defaultPackageUnit ?? null) : null,
         section: cat.supermarketSection,
         targetLocationId: cat.defaultLocationId,
         source: 'low_stock',

@@ -19,13 +19,15 @@ import { CameraPhotoControl } from '../../components/CameraPhotoControl';
 import { CatalogPicker } from '../../components/CatalogPicker';
 import { CollectionToolbar } from '../../components/CollectionToolbar';
 import { Modal } from '../../components/Modal';
+import { PackageSizeFields } from '../../components/PackageSizeFields';
 import { SearchInput } from '../../components/SearchInput';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
-import { UNITS } from '../../constants/labels';
+import { PACKAGE_UNITS, UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
 import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
 import type {
   CatalogItem,
+  PackageUnit,
   ShoppingItem,
   StockLot,
   StorageLocation,
@@ -37,21 +39,25 @@ import {
   saveImageAttachment,
   softDeleteAttachmentIfUnused,
 } from '../../utils/attachmentStorage';
-import { nowIso } from '../../utils/id';
+import { createSyncMetadata, nowIso } from '../../utils/id';
 import {
   getOrderedSupermarketSections,
   getSupermarketSectionLabel,
   getSupermarketSectionVisual,
 } from '../../utils/sectionVisuals';
 import {
-  formatQuantity,
+  formatLotQuantity,
   getStepForUnit,
   normalizeText,
   todayDateString,
 } from '../../utils/units';
 import { shouldExpandPanelsByDefault, type UiDensityMode } from '../../utils/viewPrefs';
 import { buildShoppingItem } from '../planner/plannerService';
-import { buildNewStockLot, summarizeCatalogStock } from '../stock/stockService';
+import {
+  buildNewStockLot,
+  findMergeableStockLot,
+  summarizeCatalogStock,
+} from '../stock/stockService';
 import { ShoppingQuickModal } from './ShoppingQuickModal';
 import {
   getShoppingItemVisual,
@@ -77,11 +83,15 @@ interface ShoppingViewProps {
 
 interface PutAwayRow {
   shoppingItem: ShoppingItem;
+  resolvedCatalogId: string | null;
   locationId: string;
   quantity: number;
   unit: Unit;
+  packageSize: string;
+  packageUnit: PackageUnit;
   expiresAt: string;
   include: boolean;
+  mergeExisting: boolean;
 }
 
 type ShoppingStatusFilter = 'all' | 'unchecked' | 'checked';
@@ -447,6 +457,8 @@ export function ShoppingView({
   const [freeText, setFreeText] = useState('');
   const [qty, setQty] = useState('1');
   const [unit, setUnit] = useState<Unit>('un');
+  const [pendingPkgSize, setPendingPkgSize] = useState('');
+  const [pendingPkgUnit, setPendingPkgUnit] = useState<PackageUnit>('g');
   const [section, setSection] = useState<SupermarketSection>('pantry');
   const [showCatalogInput, setShowCatalogInput] = useState(true);
   const [pendingPhotoId, setPendingPhotoId] = useState<string | null>(null);
@@ -485,6 +497,10 @@ export function ShoppingView({
   const today = todayDateString();
   const catalogById = useMemo(
     () => new Map(catalogItems.map((c) => [c.id, c])),
+    [catalogItems],
+  );
+  const catalogByNormalizedName = useMemo(
+    () => new Map(catalogItems.map((c) => [normalizeText(c.name), c])),
     [catalogItems],
   );
   const locationsById = useMemo(
@@ -553,7 +569,7 @@ export function ShoppingView({
       targetLocation: item.targetLocationId ? locationsById.get(item.targetLocationId) : undefined,
       sectionLabel: getSupermarketSectionLabel(item.section, supermarketSections),
       sourceLabel: SHOPPING_SOURCE_LABELS[item.source],
-      quantityLabel: formatQuantity(item.quantity, item.unit),
+      quantityLabel: formatLotQuantity(item).compactLabel,
       step: getStepForUnit(item.unit),
     }));
 
@@ -617,12 +633,17 @@ export function ShoppingView({
       : freeText.trim() || (pendingPhotoId ? 'Artigo com foto' : '');
     if (!label) return;
 
+    const parsedPkgSize = Number(pendingPkgSize.replace(',', '.'));
+    const hasPkg = unit === 'un' && Number.isFinite(parsedPkgSize) && parsedPkgSize > 0;
+
     const item = buildShoppingItem(
       {
         catalogItemId: selectedCatalog?.id ?? null,
         label,
         quantity: Number(qty.replace(',', '.')) || 1,
         unit,
+        packageSize: hasPkg ? parsedPkgSize : null,
+        packageUnit: hasPkg ? pendingPkgUnit : null,
         section: selectedCatalog ? selectedCatalog.supermarketSection : effectiveSection,
         targetLocationId: selectedCatalog?.defaultLocationId ?? locations[0]?.id ?? null,
         source: 'manual',
@@ -634,6 +655,7 @@ export function ShoppingView({
     setSelectedCatalog(null);
     setFreeText('');
     setQty('1');
+    setPendingPkgSize('');
     setPendingPhotoId(null);
   };
 
@@ -728,6 +750,8 @@ export function ShoppingView({
       | 'label'
       | 'quantity'
       | 'unit'
+      | 'packageSize'
+      | 'packageUnit'
       | 'section'
       | 'targetLocationId'
       | 'notes'
@@ -772,14 +796,23 @@ export function ShoppingView({
 
   const openPutAwayModal = () => {
     const rows: PutAwayRow[] = checkedItems.map((item) => {
-      const cat = item.catalogItemId ? catalogById.get(item.catalogItemId) : undefined;
+      const cat = item.catalogItemId
+        ? catalogById.get(item.catalogItemId)
+        : catalogByNormalizedName.get(normalizeText(item.label));
+      const rowUnit = item.unit ?? cat?.defaultUnit ?? 'un';
+      const pkgSize = item.packageSize ?? cat?.defaultPackageSize ?? null;
+      const pkgUnit = item.packageUnit ?? cat?.defaultPackageUnit ?? 'g';
       return {
         shoppingItem: item,
+        resolvedCatalogId: cat?.id ?? null,
         locationId: item.targetLocationId || cat?.defaultLocationId || locations[0]?.id || '',
         quantity: item.quantity ?? 1,
-        unit: item.unit ?? cat?.defaultUnit ?? 'un',
+        unit: rowUnit,
+        packageSize: pkgSize ? String(pkgSize) : '',
+        packageUnit: pkgUnit,
         expiresAt: '',
-        include: Boolean(item.catalogItemId),
+        include: true,
+        mergeExisting: true,
       };
     });
     setPutAwayRows(rows);
@@ -788,8 +821,14 @@ export function ShoppingView({
 
   const handleConfirmPutAway = async () => {
     const now = nowIso();
-    const lotsToCreate: StockLot[] = [];
+    const workingLots: StockLot[] = [...stockLots];
+    const lotsToSave: StockLot[] = [];
     const itemsToDelete: ShoppingItem[] = [];
+    const catalogToCreate: CatalogItem[] = [];
+    const createdByNormName = new Map<string, CatalogItem>();
+
+    let addedCount = 0;
+    let mergedCount = 0;
 
     for (const row of putAwayRows) {
       itemsToDelete.push({
@@ -800,29 +839,102 @@ export function ShoppingView({
       });
 
       if (!row.include || !row.locationId) continue;
-      const cat = row.shoppingItem.catalogItemId
-        ? catalogById.get(row.shoppingItem.catalogItemId)
-        : undefined;
-      if (!cat) continue;
 
-      lotsToCreate.push(
-        buildNewStockLot(
+      const parsedPkg = Number(row.packageSize.replace(',', '.'));
+      const hasPkg = row.unit === 'un' && Number.isFinite(parsedPkg) && parsedPkg > 0;
+      const normalizedPkgSize = hasPkg ? parsedPkg : null;
+      const normalizedPkgUnit = hasPkg ? row.packageUnit : null;
+
+      let cat = row.resolvedCatalogId ? catalogById.get(row.resolvedCatalogId) : undefined;
+      if (!cat) {
+        const normName = normalizeText(row.shoppingItem.label);
+        cat = catalogByNormalizedName.get(normName) ?? createdByNormName.get(normName);
+      }
+      if (!cat) {
+        cat = {
+          ...createSyncMetadata(deviceId),
+          name: row.shoppingItem.label.trim(),
+          aliases: [],
+          category: 'food',
+          trackingMode: 'exact',
+          defaultUnit: row.unit,
+          defaultPackageSize: normalizedPkgSize,
+          defaultPackageUnit: normalizedPkgUnit,
+          defaultLocationId: row.locationId,
+          minStockQty: null,
+          supermarketSection: row.shoppingItem.section,
+        };
+        catalogToCreate.push(cat);
+        createdByNormName.set(normalizeText(cat.name), cat);
+      }
+
+      if (cat.trackingMode === 'qualitative') {
+        const newLot = buildNewStockLot(
           {
             catalogItemId: cat.id,
             productLabel: row.shoppingItem.label,
             locationId: row.locationId,
-            quantity: cat.trackingMode === 'qualitative' ? null : row.quantity,
-            unit: cat.trackingMode === 'qualitative' ? null : row.unit,
-            qualitativeLevel: cat.trackingMode === 'qualitative' ? 'full' : null,
+            quantity: null,
+            unit: null,
+            qualitativeLevel: 'full',
             expiresAt: row.expiresAt || null,
           },
           deviceId,
-        ),
-      );
+        );
+        workingLots.push(newLot);
+        lotsToSave.push(newLot);
+        addedCount += 1;
+        continue;
+      }
+
+      const mergeable = row.mergeExisting
+        ? findMergeableStockLot(workingLots, {
+            catalogItemId: cat.id,
+            locationId: row.locationId,
+            unit: row.unit,
+            packageSize: normalizedPkgSize,
+            packageUnit: normalizedPkgUnit,
+            expiresAt: row.expiresAt || null,
+          })
+        : undefined;
+
+      if (mergeable) {
+        const updatedLot: StockLot = {
+          ...mergeable,
+          quantity: Math.round(((mergeable.quantity ?? 0) + row.quantity) * 1000) / 1000,
+          updatedAt: now,
+          lastModifiedBy: deviceId,
+        };
+        const idx = workingLots.findIndex((l) => l.id === mergeable.id);
+        if (idx >= 0) workingLots[idx] = updatedLot;
+        const saveIdx = lotsToSave.findIndex((l) => l.id === mergeable.id);
+        if (saveIdx >= 0) lotsToSave[saveIdx] = updatedLot;
+        else lotsToSave.push(updatedLot);
+        mergedCount += 1;
+      } else {
+        const newLot = buildNewStockLot(
+          {
+            catalogItemId: cat.id,
+            productLabel: row.shoppingItem.label,
+            locationId: row.locationId,
+            quantity: row.quantity,
+            unit: row.unit,
+            packageSize: normalizedPkgSize,
+            packageUnit: normalizedPkgUnit,
+            qualitativeLevel: null,
+            expiresAt: row.expiresAt || null,
+          },
+          deviceId,
+        );
+        workingLots.push(newLot);
+        lotsToSave.push(newLot);
+        addedCount += 1;
+      }
     }
 
-    await db.transaction('rw', [db.stockLots, db.shoppingItems], async () => {
-      if (lotsToCreate.length) await db.stockLots.bulkPut(lotsToCreate);
+    await db.transaction('rw', [db.stockLots, db.shoppingItems, db.catalogItems], async () => {
+      if (catalogToCreate.length) await db.catalogItems.bulkPut(catalogToCreate);
+      if (lotsToSave.length) await db.stockLots.bulkPut(lotsToSave);
       if (itemsToDelete.length) await db.shoppingItems.bulkPut(itemsToDelete);
     });
     for (const del of itemsToDelete) {
@@ -832,7 +944,14 @@ export function ShoppingView({
     }
 
     setPutAwayOpen(false);
-    showNotice(`${lotsToCreate.length} produto(s) arrumado(s) no stock!`);
+    const totalPut = addedCount + mergedCount;
+    if (mergedCount > 0 && addedCount > 0) {
+      showNotice(`${totalPut} produto(s) arrumado(s) (${mergedCount} somado(s) ao stock)!`);
+    } else if (mergedCount > 0) {
+      showNotice(`${mergedCount} produto(s) somado(s) aos lotes existentes!`);
+    } else {
+      showNotice(`${totalPut} produto(s) arrumado(s) no stock!`);
+    }
   };
 
   const renderShoppingItems = (items: ShoppingItemDisplayMeta[]) => {
@@ -1033,7 +1152,14 @@ export function ShoppingView({
               selectedId={selectedCatalog?.id ?? null}
               onSelect={(cat) => {
                 setSelectedCatalog(cat);
-                setUnit(cat.trackingMode === 'qualitative' ? 'un' : cat.defaultUnit);
+                const nextUnit = cat.trackingMode === 'qualitative' ? 'un' : cat.defaultUnit;
+                setUnit(nextUnit);
+                setPendingPkgSize(
+                  nextUnit === 'un' && cat.defaultPackageSize
+                    ? String(cat.defaultPackageSize)
+                    : '',
+                );
+                setPendingPkgUnit(cat.defaultPackageUnit ?? 'g');
                 setSection(cat.supermarketSection);
               }}
               placeholder="Procurar produto para comprar..."
@@ -1092,6 +1218,17 @@ export function ShoppingView({
               Guardar na lista
             </button>
           </div>
+
+          {unit === 'un' && (
+            <PackageSizeFields
+              compact
+              packageSize={pendingPkgSize}
+              packageUnit={pendingPkgUnit}
+              onChangeSize={setPendingPkgSize}
+              onChangeUnit={setPendingPkgUnit}
+              quantity={Number(qty.replace(',', '.')) || null}
+            />
+          )}
 
           <CameraPhotoControl
             attachmentId={pendingPhotoId}
@@ -1289,101 +1426,186 @@ export function ShoppingView({
       >
         <div className="space-y-3">
           <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-            {putAwayRows.map((row, idx) => (
-              <div key={row.shoppingItem.id} className="space-y-2 p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="flex items-center gap-2 font-semibold text-slate-900">
-                    <input
-                      type="checkbox"
-                      checked={row.include}
-                      disabled={!row.shoppingItem.catalogItemId}
-                      onChange={(e) =>
-                        setPutAwayRows((prev) =>
-                          prev.map((r, i) =>
-                            i === idx ? { ...r, include: e.target.checked } : r,
-                          ),
-                        )
-                      }
-                      className="h-4 w-4 rounded accent-teal-700"
-                    />
-                    {row.shoppingItem.label}
-                  </label>
-                  {!row.shoppingItem.catalogItemId && (
-                    <span className="text-[11px] text-slate-400">
-                      Item livre (só limpa da lista)
-                    </span>
+            {putAwayRows.map((row, idx) => {
+              const parsedPkg = Number(row.packageSize.replace(',', '.'));
+              const mergeCandidate =
+                row.include && row.resolvedCatalogId && row.locationId
+                  ? findMergeableStockLot(stockLots, {
+                      catalogItemId: row.resolvedCatalogId,
+                      locationId: row.locationId,
+                      unit: row.unit,
+                      packageSize: Number.isFinite(parsedPkg) && parsedPkg > 0 ? parsedPkg : null,
+                      packageUnit: row.packageUnit,
+                      expiresAt: row.expiresAt || null,
+                    })
+                  : undefined;
+
+              return (
+                <div key={row.shoppingItem.id} className="space-y-2 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 font-semibold text-slate-900">
+                      <input
+                        type="checkbox"
+                        checked={row.include}
+                        onChange={(e) =>
+                          setPutAwayRows((prev) =>
+                            prev.map((r, i) =>
+                              i === idx ? { ...r, include: e.target.checked } : r,
+                            ),
+                          )
+                        }
+                        className="h-4 w-4 rounded accent-teal-700"
+                      />
+                      {row.shoppingItem.label}
+                    </label>
+                    {!row.resolvedCatalogId && (
+                      <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+                        Novo no catálogo
+                      </span>
+                    )}
+                  </div>
+
+                  {row.include && (
+                    <div className="space-y-2 pl-6">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <select
+                          value={row.locationId}
+                          aria-label={`Local para ${row.shoppingItem.label}`}
+                          onChange={(e) =>
+                            setPutAwayRows((prev) =>
+                              prev.map((r, i) =>
+                                i === idx ? { ...r, locationId: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
+                        >
+                          {locations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.name}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            aria-label={`Quantidade de ${row.shoppingItem.label}`}
+                            value={row.quantity}
+                            onChange={(e) =>
+                              setPutAwayRows((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx ? { ...r, quantity: Number(e.target.value) || 0 } : r,
+                                ),
+                              )
+                            }
+                            className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                          />
+                          <select
+                            value={row.unit}
+                            aria-label={`Unidade de ${row.shoppingItem.label}`}
+                            onChange={(e) =>
+                              setPutAwayRows((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx ? { ...r, unit: e.target.value as Unit } : r,
+                                ),
+                              )
+                            }
+                            className="flex-1 rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-xs"
+                          >
+                            {UNITS.map((u) => (
+                              <option key={u.value} value={u.value}>
+                                {u.value}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <input
+                          type="date"
+                          value={row.expiresAt}
+                          aria-label={`Validade de ${row.shoppingItem.label}`}
+                          onChange={(e) =>
+                            setPutAwayRows((prev) =>
+                              prev.map((r, i) =>
+                                i === idx ? { ...r, expiresAt: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          title="Data de validade opcional"
+                          className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                        />
+                      </div>
+
+                      {row.unit === 'un' && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-medium text-slate-500">
+                            Tamanho/un. (opc.):
+                          </span>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder="Ex: 85"
+                            aria-label={`Tamanho embalagem de ${row.shoppingItem.label}`}
+                            value={row.packageSize}
+                            onChange={(e) =>
+                              setPutAwayRows((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx ? { ...r, packageSize: e.target.value } : r,
+                                ),
+                              )
+                            }
+                            className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                          />
+                          <select
+                            value={row.packageUnit}
+                            aria-label={`Unidade embalagem de ${row.shoppingItem.label}`}
+                            onChange={(e) =>
+                              setPutAwayRows((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx
+                                    ? { ...r, packageUnit: e.target.value as PackageUnit }
+                                    : r,
+                                ),
+                              )
+                            }
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                          >
+                            {PACKAGE_UNITS.map((u) => (
+                              <option key={u.value} value={u.value}>
+                                {u.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {mergeCandidate && (
+                        <label className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">
+                          <input
+                            type="checkbox"
+                            checked={row.mergeExisting}
+                            onChange={(e) =>
+                              setPutAwayRows((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx ? { ...r, mergeExisting: e.target.checked } : r,
+                                ),
+                              )
+                            }
+                            className="h-3.5 w-3.5 rounded accent-emerald-700"
+                          />
+                          <span>
+                            Somar ao lote existente ({mergeCandidate.quantity} {mergeCandidate.unit} +{' '}
+                            {row.quantity})
+                          </span>
+                        </label>
+                      )}
+                    </div>
                   )}
                 </div>
-
-                {row.include && (
-                  <div className="grid grid-cols-3 gap-2 pl-6">
-                    <select
-                      value={row.locationId}
-                      onChange={(e) =>
-                        setPutAwayRows((prev) =>
-                          prev.map((r, i) =>
-                            i === idx ? { ...r, locationId: e.target.value } : r,
-                          ),
-                        )
-                      }
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                    >
-                      {locations.map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex gap-1">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={row.quantity}
-                        onChange={(e) =>
-                          setPutAwayRows((prev) =>
-                            prev.map((r, i) =>
-                              i === idx ? { ...r, quantity: Number(e.target.value) || 0 } : r,
-                            ),
-                          )
-                        }
-                        className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
-                      />
-                      <select
-                        value={row.unit}
-                        onChange={(e) =>
-                          setPutAwayRows((prev) =>
-                            prev.map((r, i) =>
-                              i === idx ? { ...r, unit: e.target.value as Unit } : r,
-                            ),
-                          )
-                        }
-                        className="rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-xs"
-                      >
-                        {UNITS.map((u) => (
-                          <option key={u.value} value={u.value}>
-                            {u.value}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <input
-                      type="date"
-                      value={row.expiresAt}
-                      onChange={(e) =>
-                        setPutAwayRows((prev) =>
-                          prev.map((r, i) =>
-                            i === idx ? { ...r, expiresAt: e.target.value } : r,
-                          ),
-                        )
-                      }
-                      title="Data de validade opcional"
-                      className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

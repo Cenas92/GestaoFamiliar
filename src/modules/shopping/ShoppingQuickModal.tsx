@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Save, Trash2 } from 'lucide-react';
 import { CameraPhotoControl } from '../../components/CameraPhotoControl';
 import { Modal } from '../../components/Modal';
+import { PackageSizeFields } from '../../components/PackageSizeFields';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
 import { UNITS } from '../../constants/labels';
 import type {
+  PackageUnit,
   ShoppingItem,
   StorageLocation,
   SupermarketSection,
@@ -30,6 +32,8 @@ interface ShoppingQuickModalProps {
       | 'label'
       | 'quantity'
       | 'unit'
+      | 'packageSize'
+      | 'packageUnit'
       | 'section'
       | 'targetLocationId'
       | 'notes'
@@ -56,6 +60,8 @@ export function ShoppingQuickModal({
   const [label, setLabel] = useState('');
   const [qtyStr, setQtyStr] = useState('1');
   const [unit, setUnit] = useState<Unit>('un');
+  const [packageSize, setPackageSize] = useState('');
+  const [packageUnit, setPackageUnit] = useState<PackageUnit>('g');
   const [section, setSection] = useState<SupermarketSection>('pantry');
   const [targetLocationId, setTargetLocationId] = useState<string>('');
   const [notes, setNotes] = useState('');
@@ -66,6 +72,8 @@ export function ShoppingQuickModal({
     setLabel(meta.item.label);
     setQtyStr(meta.item.quantity !== null ? String(meta.item.quantity) : '');
     setUnit(meta.item.unit ?? 'un');
+    setPackageSize(meta.item.packageSize ? String(meta.item.packageSize) : '');
+    setPackageUnit(meta.item.packageUnit ?? 'g');
     setSection(meta.item.section);
     setTargetLocationId(meta.item.targetLocationId ?? '');
     setNotes(meta.item.notes ?? '');
@@ -104,10 +112,14 @@ export function ShoppingQuickModal({
     e.preventDefault();
     const cleanLabel = label.trim() || item.label;
     const parsed = Number(qtyStr.replace(',', '.'));
+    const parsedPkgSize = Number(packageSize.replace(',', '.'));
+    const hasPkg = unit === 'un' && Number.isFinite(parsedPkgSize) && parsedPkgSize > 0;
     onSaveItem(item, {
       label: cleanLabel,
       quantity: Number.isFinite(parsed) && parsed > 0 ? parsed : item.quantity,
       unit,
+      packageSize: hasPkg ? parsedPkgSize : null,
+      packageUnit: hasPkg ? packageUnit : null,
       section,
       targetLocationId: targetLocationId || null,
       notes: notes.trim(),
@@ -218,6 +230,18 @@ export function ShoppingQuickModal({
               ))}
             </select>
           </div>
+          {unit === 'un' && (
+            <div className="mt-2">
+              <PackageSizeFields
+                compact
+                packageSize={packageSize}
+                packageUnit={packageUnit}
+                onChangeSize={setPackageSize}
+                onChangeUnit={setPackageUnit}
+                quantity={Number(qtyStr.replace(',', '.')) || null}
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">

@@ -1,5 +1,7 @@
 export type Unit = 'g' | 'kg' | 'ml' | 'L' | 'un' | 'tbsp' | 'tsp';
 
+export type PackageUnit = 'g' | 'kg' | 'ml' | 'L';
+
 export type QualitativeLevel = 'full' | 'low' | 'empty';
 
 export type TrackingMode = 'exact' | 'qualitative';
@@ -120,6 +122,8 @@ export interface CatalogItem extends SyncMetadata {
   category: CatalogCategory;
   trackingMode: TrackingMode;
   defaultUnit: Unit;
+  defaultPackageSize?: number | null;
+  defaultPackageUnit?: PackageUnit | null;
   defaultLocationId: string;
   minStockQty: number | null;
   supermarketSection: SupermarketSection;
@@ -131,6 +135,8 @@ export interface StockLot extends SyncMetadata {
   locationId: string;
   quantity: number | null;
   unit: Unit | null;
+  packageSize?: number | null;
+  packageUnit?: PackageUnit | null;
   qualitativeLevel: QualitativeLevel | null;
   expiresAt: string | null;
   frozenOrCookedAt: string | null;
@@ -192,6 +198,8 @@ export interface ShoppingItem extends SyncMetadata {
   label: string;
   quantity: number | null;
   unit: Unit | null;
+  packageSize?: number | null;
+  packageUnit?: PackageUnit | null;
   section: SupermarketSection;
   checked: boolean;
   targetLocationId: string | null;

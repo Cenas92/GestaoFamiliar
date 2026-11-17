@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/Modal';
+import { PackageSizeFields } from '../../components/PackageSizeFields';
 import { SearchInput } from '../../components/SearchInput';
 import { CATALOG_CATEGORY_LABELS, UNITS } from '../../constants/labels';
 import { db } from '../../db/database';
 import type {
   CatalogCategory,
   CatalogItem,
+  PackageUnit,
   StorageLocation,
   SupermarketSection,
   SupermarketSectionConfig,
@@ -15,7 +17,7 @@ import type {
 } from '../../types/domain';
 import { createSyncMetadata, nowIso } from '../../utils/id';
 import { getOrderedSupermarketSections } from '../../utils/sectionVisuals';
-import { normalizeText } from '../../utils/units';
+import { formatNumberCompact, normalizeText } from '../../utils/units';
 
 interface CatalogManagerModalProps {
   open: boolean;
@@ -50,6 +52,8 @@ export function CatalogManagerModal({
   const [category, setCategory] = useState<CatalogCategory>('food');
   const [trackingMode, setTrackingMode] = useState<TrackingMode>('exact');
   const [defaultUnit, setDefaultUnit] = useState<Unit>('un');
+  const [defaultPackageSize, setDefaultPackageSize] = useState('');
+  const [defaultPackageUnit, setDefaultPackageUnit] = useState<PackageUnit>('g');
   const [defaultLocationId, setDefaultLocationId] = useState(locations[0]?.id ?? '');
   const [minStockQty, setMinStockQty] = useState('');
   const [section, setSection] = useState<SupermarketSection>(defaultSectionId);
@@ -72,6 +76,8 @@ export function CatalogManagerModal({
     setCategory('food');
     setTrackingMode('exact');
     setDefaultUnit('un');
+    setDefaultPackageSize('');
+    setDefaultPackageUnit('g');
     setDefaultLocationId(locations[0]?.id ?? '');
     setMinStockQty('');
     setSection(defaultSectionId);
@@ -85,6 +91,8 @@ export function CatalogManagerModal({
     setCategory(item.category);
     setTrackingMode(item.trackingMode);
     setDefaultUnit(item.defaultUnit);
+    setDefaultPackageSize(item.defaultPackageSize ? String(item.defaultPackageSize) : '');
+    setDefaultPackageUnit(item.defaultPackageUnit ?? 'g');
     setDefaultLocationId(item.defaultLocationId || locations[0]?.id || '');
     setMinStockQty(item.minStockQty !== null ? String(item.minStockQty) : '');
     setSection(item.supermarketSection);
@@ -94,6 +102,15 @@ export function CatalogManagerModal({
     e.preventDefault();
     if (!name.trim()) return;
     const parsedMin = minStockQty.trim() ? Number(minStockQty.replace(',', '.')) : null;
+    const parsedPkgSize = defaultPackageSize.trim()
+      ? Number(defaultPackageSize.replace(',', '.'))
+      : null;
+    const hasPkg =
+      trackingMode === 'exact' &&
+      defaultUnit === 'un' &&
+      parsedPkgSize !== null &&
+      Number.isFinite(parsedPkgSize) &&
+      parsedPkgSize > 0;
     const aliases = aliasesText
       .split(',')
       .map((s) => s.trim())
@@ -107,6 +124,8 @@ export function CatalogManagerModal({
         category,
         trackingMode,
         defaultUnit,
+        defaultPackageSize: hasPkg ? parsedPkgSize : null,
+        defaultPackageUnit: hasPkg ? defaultPackageUnit : null,
         defaultLocationId,
         minStockQty: parsedMin !== null && !Number.isNaN(parsedMin) ? parsedMin : null,
         supermarketSection: section,
@@ -121,6 +140,8 @@ export function CatalogManagerModal({
         category,
         trackingMode,
         defaultUnit,
+        defaultPackageSize: hasPkg ? parsedPkgSize : null,
+        defaultPackageUnit: hasPkg ? defaultPackageUnit : null,
         defaultLocationId,
         minStockQty: parsedMin !== null && !Number.isNaN(parsedMin) ? parsedMin : null,
         supermarketSection: section,
@@ -268,6 +289,16 @@ export function CatalogManagerModal({
             </div>
           </div>
 
+          {trackingMode === 'exact' && defaultUnit === 'un' && (
+            <PackageSizeFields
+              packageSize={defaultPackageSize}
+              packageUnit={defaultPackageUnit}
+              onChangeSize={setDefaultPackageSize}
+              onChangeUnit={setDefaultPackageUnit}
+              label="Tamanho padrão por un. (opcional)"
+            />
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -316,7 +347,13 @@ export function CatalogManagerModal({
                   <p className="font-medium text-slate-800">{item.name}</p>
                   <p className="text-xs text-slate-500">
                     {CATALOG_CATEGORY_LABELS[item.category]} ·{' '}
-                    {item.trackingMode === 'qualitative' ? 'Tem/Pouco' : item.defaultUnit}
+                    {item.trackingMode === 'qualitative'
+                      ? 'Tem/Pouco'
+                      : item.defaultUnit === 'un' &&
+                          item.defaultPackageSize &&
+                          item.defaultPackageUnit
+                        ? `un × ${formatNumberCompact(item.defaultPackageSize)}${item.defaultPackageUnit}`
+                        : item.defaultUnit}
                     {item.minStockQty ? ` · Mín: ${item.minStockQty}` : ''}
                   </p>
                 </div>

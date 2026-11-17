@@ -7,7 +7,7 @@ import {
   SUPERMARKET_SECTION_LABELS,
 } from '../../constants/labels';
 import type { CatalogItem, QualitativeLevel, StockLot } from '../../types/domain';
-import { formatDatePt, formatQuantity } from '../../utils/units';
+import { formatDatePt, formatLotQuantity } from '../../utils/units';
 import { StockTypeBadge, type StockLotDisplayMeta } from './stockVisuals';
 
 interface StockQuantityControlsProps {
@@ -85,7 +85,10 @@ export function StockQuantityControls({
     );
   }
 
-  const formattedQty = formatQuantity(lot.quantity, lot.unit);
+  const { compactLabel: formattedQty, totalEquivalentLabel } = formatLotQuantity(
+    lot,
+    meta.catalogItem?.defaultUnit,
+  );
 
   if (variant === 'inline') {
     return (
@@ -98,7 +101,7 @@ export function StockQuantityControls({
         >
           <Minus className="h-3.5 w-3.5" />
         </button>
-        <span className="min-w-[3.4rem] text-center text-xs font-bold text-slate-900 tabular-nums">
+        <span className="min-w-[3.4rem] whitespace-nowrap px-0.5 text-center text-xs font-bold text-slate-900 tabular-nums">
           {formattedQty || '—'}
         </span>
         <button
@@ -115,33 +118,45 @@ export function StockQuantityControls({
 
   if (variant === 'modal') {
     return (
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
-        <button
-          type="button"
-          onClick={() => onAdjustQuantity(lot, -step)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-xs hover:bg-slate-100"
-          aria-label={`Diminuir ${lot.productLabel}`}
-        >
-          <Minus className="h-4 w-4" />
-        </button>
-        <span className="text-base font-bold text-slate-900 tabular-nums">
-          {formattedQty || '—'}
-        </span>
-        <button
-          type="button"
-          onClick={() => onAdjustQuantity(lot, step)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-xs hover:bg-slate-100"
-          aria-label={`Aumentar ${lot.productLabel}`}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+          <button
+            type="button"
+            onClick={() => onAdjustQuantity(lot, -step)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-xs hover:bg-slate-100"
+            aria-label={`Diminuir ${lot.productLabel}`}
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <span className="text-base font-bold text-slate-900 tabular-nums">
+            {formattedQty || '—'}
+          </span>
+          <button
+            type="button"
+            onClick={() => onAdjustQuantity(lot, step)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-xs hover:bg-slate-100"
+            aria-label={`Aumentar ${lot.productLabel}`}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+        {totalEquivalentLabel && (
+          <p className="text-center text-xs font-medium text-teal-800">
+            Total equivalente: <span className="font-bold">{totalEquivalentLabel}</span>
+          </p>
+        )}
       </div>
     );
   }
 
   return (
     <>
-      <span className="text-sm font-bold text-slate-900">{formattedQty}</span>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-sm font-bold text-slate-900">{formattedQty}</span>
+        {totalEquivalentLabel && (
+          <span className="text-xs font-medium text-teal-700">({totalEquivalentLabel})</span>
+        )}
+      </div>
       <div className="flex items-center gap-1.5">
         <button
           type="button"

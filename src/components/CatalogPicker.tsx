@@ -6,12 +6,14 @@ import { db } from '../db/database';
 import type {
   CatalogCategory,
   CatalogItem,
+  PackageUnit,
   StorageLocation,
   SupermarketSection,
   SupermarketSectionConfig,
   TrackingMode,
   Unit,
 } from '../types/domain';
+import { PackageSizeFields } from './PackageSizeFields';
 import { createSyncMetadata } from '../utils/id';
 import { getOrderedSupermarketSections } from '../utils/sectionVisuals';
 import { normalizeText } from '../utils/units';
@@ -47,6 +49,8 @@ export function CatalogPicker({
   const [newCategory, setNewCategory] = useState<CatalogCategory>('food');
   const [newTrackingMode, setNewTrackingMode] = useState<TrackingMode>('exact');
   const [newUnit, setNewUnit] = useState<Unit>('un');
+  const [newPkgSize, setNewPkgSize] = useState('');
+  const [newPkgUnit, setNewPkgUnit] = useState<PackageUnit>('g');
   const [newLocationId, setNewLocationId] = useState(locations[0]?.id ?? '');
   const [newSection, setNewSection] = useState<SupermarketSection>(() =>
     orderedSections.some((s) => s.id === 'pantry')
@@ -74,6 +78,12 @@ export function CatalogPicker({
   const handleCreateInline = async () => {
     const cleanName = query.trim();
     if (!cleanName) return;
+    const parsedPkgSize = Number(newPkgSize.replace(',', '.'));
+    const hasPkg =
+      newTrackingMode === 'exact' &&
+      newUnit === 'un' &&
+      Number.isFinite(parsedPkgSize) &&
+      parsedPkgSize > 0;
     const item: CatalogItem = {
       ...createSyncMetadata(deviceId),
       name: cleanName,
@@ -81,11 +91,14 @@ export function CatalogPicker({
       category: newCategory,
       trackingMode: newTrackingMode,
       defaultUnit: newUnit,
+      defaultPackageSize: hasPkg ? parsedPkgSize : null,
+      defaultPackageUnit: hasPkg ? newPkgUnit : null,
       defaultLocationId: newLocationId || locations[0]?.id || '',
       minStockQty: null,
       supermarketSection: newSection,
     };
     await db.catalogItems.put(item);
+    setNewPkgSize('');
     setCreating(false);
     setFocused(false);
     setQuery(item.name);
@@ -207,6 +220,16 @@ export function CatalogPicker({
                   </option>
                 ))}
               </select>
+              {newTrackingMode === 'exact' && newUnit === 'un' && (
+                <PackageSizeFields
+                  compact
+                  packageSize={newPkgSize}
+                  packageUnit={newPkgUnit}
+                  onChangeSize={setNewPkgSize}
+                  onChangeUnit={setNewPkgUnit}
+                  label="Tamanho padrão por un. (opcional)"
+                />
+              )}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"

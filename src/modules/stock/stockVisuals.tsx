@@ -31,6 +31,7 @@ export interface StockLotDisplayMeta {
   isLowStock: boolean;
   sourceRecipeTitle: string | null;
   quantityLabel: string;
+  totalEquivalentLabel?: string | null;
 }
 
 export type StockViewMode = CollectionViewMode;

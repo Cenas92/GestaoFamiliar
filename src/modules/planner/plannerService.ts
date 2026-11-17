@@ -1,6 +1,7 @@
 import type {
   CatalogItem,
   MealPlanEntry,
+  PackageUnit,
   Recipe,
   ShoppingItem,
   StockLot,
@@ -12,6 +13,7 @@ import { createId, nowIso } from '../../utils/id';
 import {
   addDaysToDateString,
   convertQuantity,
+  getLotTotalInUnit,
   getUnitDimension,
   toBaseUnit,
   todayDateString,
@@ -92,27 +94,27 @@ export function computeMealPlanMissingNeeds(
     const catalog = catalogById.get(catalogId);
     if (!catalog) continue;
 
+    const baseUnitName = need.dim === 'mass' ? 'g' : need.dim === 'volume' ? 'ml' : 'un';
     let availableBase = 0;
     for (const lot of activeLots) {
       if (lot.catalogItemId !== catalogId || !lot.quantity || lot.quantity <= 0) continue;
-      const lotUnit = lot.unit ?? catalog.defaultUnit;
-      if (getUnitDimension(lotUnit) === need.dim) {
-        availableBase += toBaseUnit(lot.quantity, lotUnit).value;
+      const inBase = getLotTotalInUnit(lot, baseUnitName, catalog.defaultUnit);
+      if (inBase !== null) {
+        availableBase += inBase;
       }
     }
 
     for (const shop of activeShopping) {
       if (shop.catalogItemId !== catalogId || !shop.quantity || shop.quantity <= 0) continue;
-      const shopUnit = shop.unit ?? catalog.defaultUnit;
-      if (getUnitDimension(shopUnit) === need.dim) {
-        availableBase += toBaseUnit(shop.quantity, shopUnit).value;
+      const inBase = getLotTotalInUnit(shop, baseUnitName, catalog.defaultUnit);
+      if (inBase !== null) {
+        availableBase += inBase;
       }
     }
 
     const netBase = need.baseQty - availableBase;
     if (netBase <= 0.0001) continue;
 
-    const baseUnitName = need.dim === 'mass' ? 'g' : need.dim === 'volume' ? 'ml' : 'un';
     let displayUnit = need.targetUnit;
     let qty = convertQuantity(netBase, baseUnitName, displayUnit) ?? netBase;
 
@@ -215,6 +217,8 @@ export function buildShoppingItem(
     label: string;
     quantity: number | null;
     unit: Unit | null;
+    packageSize?: number | null;
+    packageUnit?: PackageUnit | null;
     section: SupermarketSection;
     targetLocationId: string | null;
     source: ShoppingItem['source'];
@@ -224,6 +228,12 @@ export function buildShoppingItem(
   deviceId: string,
 ): ShoppingItem {
   const now = nowIso();
+  const hasPkg =
+    params.unit === 'un' &&
+    params.packageSize !== undefined &&
+    params.packageSize !== null &&
+    params.packageSize > 0 &&
+    Boolean(params.packageUnit);
   return {
     id: createId(),
     createdAt: now,
@@ -234,6 +244,8 @@ export function buildShoppingItem(
     label: params.label.trim(),
     quantity: params.quantity,
     unit: params.unit,
+    packageSize: hasPkg ? params.packageSize! : null,
+    packageUnit: hasPkg ? params.packageUnit! : null,
     section: params.section,
     checked: false,
     targetLocationId: params.targetLocationId,

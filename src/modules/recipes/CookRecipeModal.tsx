@@ -92,7 +92,14 @@ export function CookRecipeModal({
         unit: ing.unit,
         affectedLotSummary:
           plan.length > 0
-            ? plan.map((p) => `${p.deductInLotUnit} ${p.currentUnit} (${p.locationName})`).join(' + ')
+            ? plan
+                .map((p) => {
+                  const qtyText = p.deductEquivalent
+                    ? `${p.deductInLotUnit} ${p.currentUnit} (${p.deductEquivalent})`
+                    : `${p.deductInLotUnit} ${p.currentUnit}`;
+                  return `${qtyText} · ${p.locationName}`;
+                })
+                .join(' + ')
             : 'Sem stock registado',
       });
     }
