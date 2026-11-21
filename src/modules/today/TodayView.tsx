@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
+  Check,
   ChefHat,
   Clock,
   Package,
@@ -9,6 +10,7 @@ import {
   ShoppingCart,
   Snowflake,
   Sparkles,
+  Wallet,
 } from 'lucide-react';
 import { MEAL_SLOT_LABELS } from '../../constants/labels';
 import { db } from '../../db/database';
@@ -16,6 +18,8 @@ import type {
   AppSettings,
   AppTab,
   CatalogItem,
+  FinanceCategoryConfig,
+  FinanceTransaction,
   HouseholdMember,
   MealPlanEntry,
   Recipe,
@@ -23,8 +27,17 @@ import type {
   StockLot,
   StorageLocation,
 } from '../../types/domain';
-import { formatQuantity, todayDateString } from '../../utils/units';
+import { formatDatePt, formatQuantity, todayDateString } from '../../utils/units';
 import type { UiDensityMode } from '../../utils/viewPrefs';
+import {
+  buildCategoryBudgetProgress,
+  currentMonthString,
+  formatMonthShortPt,
+  getUpcomingFixedBills,
+  summarizeMonthFinances,
+  toggleFinanceTransactionPaid,
+} from '../finances/financeService';
+import { formatEur } from '../finances/financeVisuals';
 import { buildShoppingItem, getTomorrowDefrostReminders } from '../planner/plannerService';
 import { evaluateRecipeMatch } from '../recipes/matchingEngine';
 import { getLotExpiryInfo, summarizeCatalogStock } from '../stock/stockService';
@@ -37,6 +50,8 @@ interface TodayViewProps {
   recipes: Recipe[];
   mealPlan: MealPlanEntry[];
   shoppingItems?: ShoppingItem[];
+  financeCategories?: FinanceCategoryConfig[];
+  financeTransactions?: FinanceTransaction[];
   members: HouseholdMember[];
   uiDensity?: UiDensityMode;
   onNavigate: (tab: AppTab) => void;
@@ -53,6 +68,8 @@ export function TodayView({
   recipes,
   mealPlan,
   shoppingItems = [],
+  financeCategories = [],
+  financeTransactions = [],
   members,
   uiDensity = 'clean',
   onNavigate,
@@ -183,11 +200,33 @@ export function TodayView({
     () => shoppingItems.filter((s) => !s.checked).length,
     [shoppingItems],
   );
+  const currentMonth = currentMonthString(today);
+  const upcomingFixedBills = useMemo(
+    () => getUpcomingFixedBills(financeTransactions, today, 7),
+    [financeTransactions, today],
+  );
+  const monthFinanceSummary = useMemo(() => {
+    if (!isComplete || financeTransactions.length === 0) return null;
+    const summary = summarizeMonthFinances(currentMonth, financeTransactions, financeCategories);
+    return summary.transactionCount > 0 ? summary : null;
+  }, [isComplete, currentMonth, financeTransactions, financeCategories]);
+  const alertBudgetsCount = useMemo(() => {
+    if (!isComplete || financeCategories.length === 0) return 0;
+    return buildCategoryBudgetProgress(currentMonth, financeTransactions, financeCategories).filter(
+      (b) => b.status === 'warning' || b.status === 'exceeded',
+    ).length;
+  }, [isComplete, currentMonth, financeTransactions, financeCategories]);
+
+  const handleMarkBillPaid = async (tx: FinanceTransaction) => {
+    await toggleFinanceTransactionPaid(tx, settings.deviceId);
+    showToastMessage(`${tx.title} marcada como paga.`);
+  };
+
   const syncConfigured = Boolean(settings.googleClientId && settings.googleDriveFolderId);
 
   return (
     <div className="space-y-3.5">
-      {isComplete && toast && (
+      {toast && (
         <div className="rounded-xl bg-teal-900 px-3.5 py-2 text-xs font-medium text-white shadow">
           {toast}
         </div>
@@ -442,6 +481,119 @@ export function TodayView({
           </div>
         )}
       </section>
+
+      {/* Upcoming fixed bills (Clean & Complete — shown only when bills are due soon) */}
+      {upcomingFixedBills.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60 shadow-xs">
+          <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+            <h2 className="flex items-center gap-1.5 text-xs font-bold text-amber-950">
+              <Wallet className="h-4 w-4 text-amber-700" aria-hidden="true" />
+              <span>
+                Despesas fixas a vencer ({upcomingFixedBills.length})
+              </span>
+            </h2>
+            <button
+              type="button"
+              onClick={() => onNavigate('finances')}
+              className="text-xs font-semibold text-amber-900 hover:underline"
+            >
+              Finanças
+            </button>
+          </div>
+          <div className="divide-y divide-amber-100 border-t border-amber-100 bg-white/90">
+            {upcomingFixedBills.slice(0, 4).map(({ tx, daysUntil, isOverdue }) => (
+              <div
+                key={tx.id}
+                className="flex items-center justify-between gap-2 px-3.5 py-2 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{tx.title}</p>
+                  <p
+                    className={`text-[11px] ${
+                      isOverdue ? 'font-semibold text-rose-700' : 'text-slate-500'
+                    }`}
+                  >
+                    {isOverdue
+                      ? `Venceu há ${Math.abs(daysUntil)} ${
+                          Math.abs(daysUntil) === 1 ? 'dia' : 'dias'
+                        }`
+                      : daysUntil === 0
+                        ? 'Vence hoje'
+                        : daysUntil === 1
+                          ? 'Vence amanhã'
+                          : `Vence em ${daysUntil} dias`}{' '}
+                    · {formatDatePt(tx.date)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-bold tabular-nums text-slate-900">
+                    {formatEur(tx.amount)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleMarkBillPaid(tx)}
+                    aria-label={`Marcar ${tx.title} como paga`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                  >
+                    <Check className="h-3 w-3" aria-hidden="true" />
+                    Pago
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Optional compact monthly financial summary (Complete mode only) */}
+      {isComplete && monthFinanceSummary && (
+        <section className="overflow-hidden rounded-2xl border border-violet-200/80 bg-white shadow-xs">
+          <button
+            type="button"
+            onClick={() => onNavigate('finances')}
+            className="block w-full p-3.5 text-left transition hover:bg-violet-50/30"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Wallet className="h-4 w-4 text-violet-700" aria-hidden="true" />
+                <span>Resumo Financeiro · {formatMonthShortPt(currentMonth)}</span>
+              </h2>
+              <span className="text-xs font-semibold text-violet-700">Ver Finanças</span>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <div>
+                <p className="text-[10px] font-medium text-slate-500">Entradas</p>
+                <p className="text-xs font-bold tabular-nums text-emerald-700">
+                  {formatEur(monthFinanceSummary.incomeTotal)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-slate-500">Saídas</p>
+                <p className="text-xs font-bold tabular-nums text-rose-700">
+                  {formatEur(monthFinanceSummary.expensesTotal)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-slate-500">Saldo</p>
+                <p
+                  className={`text-xs font-bold tabular-nums ${
+                    monthFinanceSummary.balanceTotal >= 0 ? 'text-teal-800' : 'text-rose-700'
+                  }`}
+                >
+                  {formatEur(monthFinanceSummary.balanceTotal)}
+                </p>
+              </div>
+            </div>
+            {alertBudgetsCount > 0 && (
+              <p className="mt-1.5 text-[11px] font-semibold text-amber-700">
+                {alertBudgetsCount === 1
+                  ? '1 orçamento mensal em alerta'
+                  : `${alertBudgetsCount} orçamentos mensais em alerta`}
+              </p>
+            )}
+          </button>
+        </section>
+      )}
 
       {/* What can we cook now */}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">

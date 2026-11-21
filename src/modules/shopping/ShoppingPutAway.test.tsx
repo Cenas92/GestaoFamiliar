@@ -134,6 +134,11 @@ describe('ShoppingView PutAway with package sizes, lot merging and free-text cre
       (screen.getByLabelText('Tamanho embalagem de Milho Doce') as HTMLInputElement).value,
     ).toBe('70');
 
+    fireEvent.change(screen.getByLabelText('Total do talão (€)'), { target: { value: '42,50' } });
+    fireEvent.change(screen.getByLabelText('Loja ou descrição da despesa'), {
+      target: { value: 'Continente' },
+    });
+
     fireEvent.click(screen.getByRole('button', { name: /Confirmar arrumação/i }));
 
     await waitFor(async () => {
@@ -153,6 +158,14 @@ describe('ShoppingView PutAway with package sizes, lot merging and free-text cre
       const cornCat = allCats.find((c) => c.name === 'Milho Doce');
       expect(cornCat).toBeDefined();
       expect(cornCat?.defaultPackageSize).toBe(70);
+
+      const financeTxs = await db.financeTransactions.toArray();
+      const groceryTx = financeTxs.find((t) => !t.deletedAt && t.title === 'Continente');
+      expect(groceryTx).toBeDefined();
+      expect(groceryTx?.amount).toBe(42.5);
+      expect(groceryTx?.categoryId).toBe('fin-cat-groceries');
+      expect(groceryTx?.status).toBe('paid');
     });
+    await db.financeTransactions.clear();
   });
 });

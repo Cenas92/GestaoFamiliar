@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   SlidersHorizontal,
   Trash2,
+  Wallet,
   X,
 } from 'lucide-react';
 import { CameraPhotoControl } from '../../components/CameraPhotoControl';
@@ -27,6 +28,7 @@ import { db } from '../../db/database';
 import { useCollectionViewPrefs } from '../../hooks/useCollectionViewPrefs';
 import type {
   CatalogItem,
+  FinanceCategoryConfig,
   PackageUnit,
   ShoppingItem,
   StockLot,
@@ -52,6 +54,8 @@ import {
   todayDateString,
 } from '../../utils/units';
 import { shouldExpandPanelsByDefault, type UiDensityMode } from '../../utils/viewPrefs';
+import { saveFinanceTransaction } from '../finances/financeService';
+import { formatEur } from '../finances/financeVisuals';
 import { buildShoppingItem } from '../planner/plannerService';
 import {
   buildNewStockLot,
@@ -76,6 +80,7 @@ interface ShoppingViewProps {
   stockLots: StockLot[];
   locations: StorageLocation[];
   supermarketSections?: SupermarketSectionConfig[];
+  financeCategories?: FinanceCategoryConfig[];
   expiryWarningDays: number;
   deviceId: string;
   uiDensity?: UiDensityMode;
@@ -440,6 +445,7 @@ export function ShoppingView({
   stockLots,
   locations,
   supermarketSections,
+  financeCategories = [],
   expiryWarningDays,
   deviceId,
   uiDensity = 'clean',
@@ -492,7 +498,17 @@ export function ShoppingView({
 
   const [putAwayOpen, setPutAwayOpen] = useState(false);
   const [putAwayRows, setPutAwayRows] = useState<PutAwayRow[]>([]);
+  const [putAwayTotal, setPutAwayTotal] = useState('');
+  const [putAwayStore, setPutAwayStore] = useState('');
+  const [putAwayCategoryId, setPutAwayCategoryId] = useState('fin-cat-groceries');
+  const [putAwayReceiptPhotoId, setPutAwayReceiptPhotoId] = useState<string | null>(null);
+  const [showPutAwayReceiptPhoto, setShowPutAwayReceiptPhoto] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  const variableFinanceCategories = useMemo(
+    () => financeCategories.filter((c) => !c.deletedAt && c.kind !== 'income'),
+    [financeCategories],
+  );
 
   const today = todayDateString();
   const catalogById = useMemo(
@@ -816,6 +832,14 @@ export function ShoppingView({
       };
     });
     setPutAwayRows(rows);
+    setPutAwayTotal('');
+    setPutAwayStore('');
+    const groceriesCat =
+      variableFinanceCategories.find((c) => c.id === 'fin-cat-groceries') ??
+      variableFinanceCategories[0];
+    setPutAwayCategoryId(groceriesCat?.id ?? 'fin-cat-groceries');
+    setPutAwayReceiptPhotoId(null);
+    setShowPutAwayReceiptPhoto(false);
     setPutAwayOpen(true);
   };
 
@@ -943,14 +967,47 @@ export function ShoppingView({
       }
     }
 
+    const parsedReceiptTotal = Number(putAwayTotal.trim().replace(',', '.'));
+    let registeredExpenseAmount: number | null = null;
+    if (Number.isFinite(parsedReceiptTotal) && parsedReceiptTotal > 0) {
+      const storeTitle = putAwayStore.trim() || 'Supermercado';
+      await saveFinanceTransaction(
+        {
+          title: storeTitle,
+          kind: 'variable',
+          categoryId: putAwayCategoryId || 'fin-cat-groceries',
+          amount: parsedReceiptTotal,
+          date: todayDateString(),
+          status: 'paid',
+          notes:
+            itemsToDelete.length > 0
+              ? `Compras de supermercado (${itemsToDelete.length} ${
+                  itemsToDelete.length === 1 ? 'item' : 'itens'
+                })`
+              : '',
+          photoAttachmentId: putAwayReceiptPhotoId,
+        },
+        deviceId,
+      );
+      registeredExpenseAmount = parsedReceiptTotal;
+    } else if (putAwayReceiptPhotoId) {
+      void softDeleteAttachmentIfUnused(putAwayReceiptPhotoId);
+    }
+
     setPutAwayOpen(false);
     const totalPut = addedCount + mergedCount;
+    const expenseSuffix =
+      registeredExpenseAmount !== null
+        ? ` · ${formatEur(registeredExpenseAmount)} registado em Finanças.`
+        : '';
     if (mergedCount > 0 && addedCount > 0) {
-      showNotice(`${totalPut} produto(s) arrumado(s) (${mergedCount} somado(s) ao stock)!`);
+      showNotice(
+        `${totalPut} produto(s) arrumado(s) (${mergedCount} somado(s) ao stock)!${expenseSuffix}`,
+      );
     } else if (mergedCount > 0) {
-      showNotice(`${mergedCount} produto(s) somado(s) aos lotes existentes!`);
+      showNotice(`${mergedCount} produto(s) somado(s) aos lotes existentes!${expenseSuffix}`);
     } else {
-      showNotice(`${totalPut} produto(s) arrumado(s) no stock!`);
+      showNotice(`${totalPut} produto(s) arrumado(s) no stock!${expenseSuffix}`);
     }
   };
 
@@ -1606,6 +1663,87 @@ export function ShoppingView({
                 </div>
               );
             })}
+          </div>
+
+          {/* Bloco opcional: lançar total do talão em Finanças */}
+          <div className="space-y-2 rounded-xl border border-violet-200/80 bg-violet-50/40 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-950">
+                <Wallet className="h-3.5 w-3.5 text-violet-700" aria-hidden="true" />
+                Registar gasto nas Finanças <span className="font-normal text-slate-500">(opcional)</span>
+              </span>
+              {!showPutAwayReceiptPhoto && (
+                <button
+                  type="button"
+                  onClick={() => setShowPutAwayReceiptPhoto(true)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-50"
+                >
+                  <Camera className="h-3 w-3" aria-hidden="true" />
+                  Foto talão
+                </button>
+              )}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div>
+                <label className="mb-0.5 block text-[11px] font-medium text-slate-600">
+                  Total do talão (€)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={putAwayTotal}
+                  onChange={(e) => setPutAwayTotal(e.target.value)}
+                  placeholder="Ex.: 58,40"
+                  aria-label="Total do talão (€)"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-0.5 block text-[11px] font-medium text-slate-600">
+                  Loja / descrição
+                </label>
+                <input
+                  type="text"
+                  value={putAwayStore}
+                  onChange={(e) => setPutAwayStore(e.target.value)}
+                  placeholder="Supermercado"
+                  aria-label="Loja ou descrição da despesa"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+
+              {variableFinanceCategories.length > 0 && (
+                <div>
+                  <label className="mb-0.5 block text-[11px] font-medium text-slate-600">
+                    Categoria
+                  </label>
+                  <select
+                    value={putAwayCategoryId}
+                    onChange={(e) => setPutAwayCategoryId(e.target.value)}
+                    aria-label="Categoria financeira da compra"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs focus:border-teal-500 focus:outline-none"
+                  >
+                    {variableFinanceCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {showPutAwayReceiptPhoto && (
+              <div className="pt-1">
+                <CameraPhotoControl
+                  attachmentId={putAwayReceiptPhotoId}
+                  alt="Talão de compras"
+                  onChange={setPutAwayReceiptPhotoId}
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

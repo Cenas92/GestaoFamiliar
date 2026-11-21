@@ -9,7 +9,7 @@ import type {
 } from '../../types/domain';
 import { softDeleteAttachmentIfUnused } from '../../utils/attachmentStorage';
 import { createSyncMetadata, nowIso } from '../../utils/id';
-import { daysBetweenDateStrings, todayDateString } from '../../utils/units';
+import { addDaysToDateString, daysBetweenDateStrings, todayDateString } from '../../utils/units';
 
 const MONTH_NAMES_PT = [
   'Janeiro',
@@ -325,6 +325,194 @@ export function summarizeMonthFinances(
     expenseByCategory,
     incomeByCategory,
   };
+}
+
+export type BudgetHealthStatus = 'ok' | 'warning' | 'exceeded';
+
+export interface CategoryBudgetProgress {
+  category: FinanceCategoryConfig;
+  budget: number;
+  spent: number;
+  remaining: number;
+  percent: number;
+  status: BudgetHealthStatus;
+}
+
+export function buildCategoryBudgetProgress(
+  month: string,
+  transactions: FinanceTransaction[],
+  categories: FinanceCategoryConfig[],
+): CategoryBudgetProgress[] {
+  const spentByCategory = new Map<string, number>();
+  for (const tx of transactions) {
+    if (tx.deletedAt || tx.excludeFromTotals || tx.month !== month || tx.kind === 'income') {
+      continue;
+    }
+    const val = Math.max(0, Number(tx.amount) || 0);
+    spentByCategory.set(tx.categoryId, (spentByCategory.get(tx.categoryId) ?? 0) + val);
+  }
+
+  return categories
+    .filter(
+      (cat) =>
+        !cat.deletedAt &&
+        cat.kind !== 'income' &&
+        cat.monthlyBudget !== null &&
+        cat.monthlyBudget > 0,
+    )
+    .map((cat) => {
+      const budget = cat.monthlyBudget as number;
+      const spent = Math.round((spentByCategory.get(cat.id) ?? 0) * 100) / 100;
+      const remaining = Math.round((budget - spent) * 100) / 100;
+      const percent = Math.round((spent / budget) * 100);
+      const status: BudgetHealthStatus =
+        spent > budget ? 'exceeded' : percent >= 80 ? 'warning' : 'ok';
+      return {
+        category: cat,
+        budget,
+        spent,
+        remaining,
+        percent,
+        status,
+      };
+    })
+    .sort((a, b) => b.percent - a.percent || b.spent - a.spent);
+}
+
+export interface MonthlyHistoryPoint {
+  month: string;
+  shortLabel: string;
+  monthOnlyLabel: string;
+  income: number;
+  expenses: number;
+  fixed: number;
+  variable: number;
+  balance: number;
+  hasActivity: boolean;
+}
+
+export interface MonthlyHistorySummary {
+  points: MonthlyHistoryPoint[];
+  maxBarValue: number;
+  activeMonthsCount: number;
+  avgIncome: number;
+  avgExpenses: number;
+  avgBalance: number;
+  totalBalance: number;
+}
+
+export function buildMonthlyFinanceHistory(
+  endMonth: string,
+  monthCount: number,
+  transactions: FinanceTransaction[],
+): MonthlyHistorySummary {
+  const count = Math.max(1, monthCount);
+  const months: string[] = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    months.push(shiftMonth(endMonth, -i));
+  }
+
+  const monthSet = new Set(months);
+  const totalsByMonth = new Map<
+    string,
+    { income: number; fixed: number; variable: number; count: number }
+  >();
+  for (const m of months) {
+    totalsByMonth.set(m, { income: 0, fixed: 0, variable: 0, count: 0 });
+  }
+
+  for (const tx of transactions) {
+    if (tx.deletedAt || tx.excludeFromTotals || !monthSet.has(tx.month)) continue;
+    const bucket = totalsByMonth.get(tx.month);
+    if (!bucket) continue;
+    const val = Math.max(0, Number(tx.amount) || 0);
+    if (tx.kind === 'income') bucket.income += val;
+    else if (tx.kind === 'fixed') bucket.fixed += val;
+    else bucket.variable += val;
+    bucket.count += 1;
+  }
+
+  let maxBarValue = 0;
+  let activeMonthsCount = 0;
+  let sumIncome = 0;
+  let sumExpenses = 0;
+  let sumBalance = 0;
+
+  const points: MonthlyHistoryPoint[] = months.map((m) => {
+    const b = totalsByMonth.get(m)!;
+    const expenses = Math.round((b.fixed + b.variable) * 100) / 100;
+    const income = Math.round(b.income * 100) / 100;
+    const balance = Math.round((income - expenses) * 100) / 100;
+    const hasActivity = b.count > 0;
+
+    if (income > maxBarValue) maxBarValue = income;
+    if (expenses > maxBarValue) maxBarValue = expenses;
+    if (hasActivity) {
+      activeMonthsCount += 1;
+      sumIncome += income;
+      sumExpenses += expenses;
+      sumBalance += balance;
+    }
+
+    const { monthIndex } = parseMonthString(m);
+    return {
+      month: m,
+      shortLabel: formatMonthShortPt(m),
+      monthOnlyLabel: MONTH_SHORT_PT[monthIndex] ?? m.slice(5),
+      income,
+      expenses,
+      fixed: Math.round(b.fixed * 100) / 100,
+      variable: Math.round(b.variable * 100) / 100,
+      balance,
+      hasActivity,
+    };
+  });
+
+  const denom = activeMonthsCount || 1;
+  return {
+    points,
+    maxBarValue,
+    activeMonthsCount,
+    avgIncome: activeMonthsCount > 0 ? Math.round((sumIncome / denom) * 100) / 100 : 0,
+    avgExpenses: activeMonthsCount > 0 ? Math.round((sumExpenses / denom) * 100) / 100 : 0,
+    avgBalance: activeMonthsCount > 0 ? Math.round((sumBalance / denom) * 100) / 100 : 0,
+    totalBalance: Math.round(sumBalance * 100) / 100,
+  };
+}
+
+export interface UpcomingFixedBill {
+  tx: FinanceTransaction;
+  daysUntil: number;
+  isOverdue: boolean;
+}
+
+export function getUpcomingFixedBills(
+  transactions: FinanceTransaction[],
+  today: string = todayDateString(),
+  windowDays = 7,
+): UpcomingFixedBill[] {
+  const cutoff = addDaysToDateString(today, windowDays);
+  const currentMonth = currentMonthString(today);
+
+  return transactions
+    .filter(
+      (tx) =>
+        !tx.deletedAt &&
+        !tx.excludeFromTotals &&
+        tx.kind === 'fixed' &&
+        tx.status === 'planned' &&
+        tx.date <= cutoff &&
+        (tx.month === currentMonth || daysBetweenDateStrings(today, tx.date) >= -31),
+    )
+    .map((tx) => {
+      const daysUntil = daysBetweenDateStrings(today, tx.date);
+      return {
+        tx,
+        daysUntil,
+        isOverdue: daysUntil < 0,
+      };
+    })
+    .sort((a, b) => a.daysUntil - b.daysUntil || b.tx.amount - a.tx.amount);
 }
 
 export type WarrantyStatus = 'active' | 'expiring_soon' | 'expired' | 'no_expiry';

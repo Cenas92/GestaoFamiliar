@@ -4,12 +4,15 @@ import { FamilyDatabase } from '../../db/database';
 import type { FinanceRecurringRule, FinanceTransaction } from '../../types/domain';
 import {
   addYearsToDateString,
+  buildCategoryBudgetProgress,
+  buildMonthlyFinanceHistory,
   buildRecurringInstanceId,
   clampDayToMonth,
   deleteFinanceRecurringRule,
   deleteFinanceTransaction,
   ensureRecurringTransactionsForMonth,
   getNextDueMonthForRule,
+  getUpcomingFixedBills,
   getWarrantyStatus,
   isRecurringRuleDueInMonth,
   saveFinanceRecurringRule,
@@ -255,5 +258,141 @@ describe('financeService', () => {
     expect(getWarrantyStatus('2026-11-01', '2026-11-21').status).toBe('expired');
     expect(getWarrantyStatus('2026-12-10', '2026-11-21').status).toBe('expiring_soon');
     expect(getWarrantyStatus('2029-11-21', '2026-11-21').status).toBe('active');
+  });
+
+  it('calcula progresso de orçamentos, histórico multi-mês e alertas de fixas a vencer', async () => {
+    const categories = buildStarterFinanceCategories('dev-1').map((c) => {
+      if (c.id === 'fin-cat-groceries') return { ...c, monthlyBudget: 400 };
+      if (c.id === 'fin-cat-dining') return { ...c, monthlyBudget: 100 };
+      if (c.id === 'fin-cat-fuel') return { ...c, monthlyBudget: 200 };
+      return c;
+    });
+
+    const txs: FinanceTransaction[] = [
+      await saveFinanceTransaction(
+        {
+          title: 'Ordenado Out',
+          kind: 'income',
+          categoryId: 'fin-cat-salary',
+          amount: 2000,
+          date: '2026-10-25',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Renda Out',
+          kind: 'fixed',
+          categoryId: 'fin-cat-housing',
+          amount: 700,
+          date: '2026-10-01',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Ordenado Nov',
+          kind: 'income',
+          categoryId: 'fin-cat-salary',
+          amount: 2200,
+          date: '2026-11-25',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Continente Nov',
+          kind: 'variable',
+          categoryId: 'fin-cat-groceries',
+          amount: 340,
+          date: '2026-11-10',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Jantar fora',
+          kind: 'variable',
+          categoryId: 'fin-cat-dining',
+          amount: 120,
+          date: '2026-11-15',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Luz (em breve)',
+          kind: 'fixed',
+          categoryId: 'fin-cat-utilities',
+          amount: 85,
+          date: '2026-11-24',
+          status: 'planned',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Água (em atraso)',
+          kind: 'fixed',
+          categoryId: 'fin-cat-utilities',
+          amount: 35,
+          date: '2026-11-19',
+          status: 'planned',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Seguro (longe)',
+          kind: 'fixed',
+          categoryId: 'fin-cat-insurance',
+          amount: 150,
+          date: '2026-12-15',
+          status: 'planned',
+        },
+        'dev-1',
+        testDb,
+      ),
+    ];
+
+    // Budget progress
+    const budgets = buildCategoryBudgetProgress('2026-11', txs, categories);
+    expect(budgets).toHaveLength(3);
+    expect(budgets[0].category.id).toBe('fin-cat-dining');
+    expect(budgets[0].status).toBe('exceeded');
+    expect(budgets[0].remaining).toBe(-20);
+    expect(budgets[1].category.id).toBe('fin-cat-groceries');
+    expect(budgets[1].status).toBe('warning');
+    expect(budgets[1].percent).toBe(85);
+    expect(budgets[2].category.id).toBe('fin-cat-fuel');
+    expect(budgets[2].status).toBe('ok');
+
+    // Multi-month history
+    const history = buildMonthlyFinanceHistory('2026-11', 6, txs);
+    expect(history.points).toHaveLength(6);
+    expect(history.activeMonthsCount).toBe(2);
+    expect(history.avgIncome).toBe(2100);
+    expect(history.points[4].month).toBe('2026-10');
+    expect(history.points[4].balance).toBe(1300);
+    expect(history.points[5].month).toBe('2026-11');
+    expect(history.points[5].expenses).toBe(580);
+
+    // Upcoming fixed bills within 7 days of 2026-11-21
+    const upcoming = getUpcomingFixedBills(txs, '2026-11-21', 7);
+    expect(upcoming.map((u) => u.tx.title)).toEqual(['Água (em atraso)', 'Luz (em breve)']);
+    expect(upcoming[0].isOverdue).toBe(true);
+    expect(upcoming[1].daysUntil).toBe(3);
   });
 });

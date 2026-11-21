@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
+  AlertTriangle,
+  BarChart3,
   CalendarClock,
   Camera,
   Check,
@@ -12,6 +14,7 @@ import {
   Repeat,
   ShieldCheck,
   SlidersHorizontal,
+  Target,
   X,
 } from 'lucide-react';
 import { AttachmentImage } from '../../components/AttachmentPreview';
@@ -36,8 +39,11 @@ import {
   type CollectionViewMode,
   type UiDensityMode,
 } from '../../utils/viewPrefs';
+import { FinanceBudgetsModal } from './FinanceBudgetsModal';
 import { FinanceRecurringModal } from './FinanceRecurringModal';
 import {
+  buildCategoryBudgetProgress,
+  buildMonthlyFinanceHistory,
   buildRecurringInstanceId,
   currentMonthString,
   ensureRecurringTransactionsForMonth,
@@ -119,6 +125,8 @@ export function FinancesView({
   const [recurringModalOpen, setRecurringModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<FinanceRecurringRule | null>(null);
   const [recurringInitialKind, setRecurringInitialKind] = useState<'income' | 'fixed'>('fixed');
+  const [budgetsModalOpen, setBudgetsModalOpen] = useState(false);
+  const [historyMonths, setHistoryMonths] = useState<6 | 12>(6);
 
   const [toast, setToast] = useState<string | null>(null);
   const [capturingPhoto, setCapturingPhoto] = useState(false);
@@ -175,6 +183,21 @@ export function FinancesView({
   const monthSummary = useMemo(
     () => summarizeMonthFinances(activeMonth, transactions, categories),
     [activeMonth, transactions, categories],
+  );
+
+  const budgetProgress = useMemo(
+    () => buildCategoryBudgetProgress(activeMonth, transactions, categories),
+    [activeMonth, transactions, categories],
+  );
+
+  const alertBudgetCount = useMemo(
+    () => budgetProgress.filter((b) => b.status === 'warning' || b.status === 'exceeded').length,
+    [budgetProgress],
+  );
+
+  const monthlyHistory = useMemo(
+    () => buildMonthlyFinanceHistory(activeMonth, historyMonths, transactions),
+    [activeMonth, historyMonths, transactions],
   );
 
   const monthTransactions = useMemo(() => {
@@ -515,6 +538,20 @@ export function FinancesView({
                     )}
                   </span>
                 </div>
+              )}
+              {isComplete && alertBudgetCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSubTab('summary')}
+                  className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                >
+                  <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span>
+                    {alertBudgetCount === 1
+                      ? '1 orçamento em alerta este mês'
+                      : `${alertBudgetCount} orçamentos em alerta este mês`}
+                  </span>
+                </button>
               )}
             </div>
           )}
@@ -1147,6 +1184,223 @@ export function FinancesView({
             </div>
           </div>
 
+          {/* Orçamentos mensais por categoria */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-3.5">
+            <div className="flex flex-nowrap items-center justify-between gap-2">
+              <h2 className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs font-bold uppercase tracking-wide text-slate-500">
+                <Target className="h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
+                <span className="truncate">Orçamentos mensais</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setBudgetsModalOpen(true)}
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-50"
+              >
+                {budgetProgress.length > 0 ? 'Ajustar limites' : 'Definir limites'}
+              </button>
+            </div>
+
+            {budgetProgress.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-400">
+                Define limites mensais (ex.: Supermercado 450 €, Combustível 150 €) para acompanhar
+                o progresso por categoria.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2.5">
+                {budgetProgress.map((item) => {
+                  const visual = getFinanceCategoryVisual(item.category);
+                  const barColor =
+                    item.status === 'exceeded'
+                      ? 'bg-rose-500'
+                      : item.status === 'warning'
+                        ? 'bg-amber-500'
+                        : 'bg-teal-600';
+                  const statusTextClass =
+                    item.status === 'exceeded'
+                      ? 'text-rose-700'
+                      : item.status === 'warning'
+                        ? 'text-amber-700'
+                        : 'text-emerald-700';
+
+                  return (
+                    <button
+                      key={item.category.id}
+                      type="button"
+                      onClick={() => {
+                        setCategoryFilter(item.category.id);
+                        setKindFilter('all');
+                        setSubTab('transactions');
+                      }}
+                      className="block w-full text-left transition hover:opacity-85"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <TypeIconBadge visual={visual} size="sm" />
+                          <span className="truncate font-semibold text-slate-800">
+                            {item.category.name}
+                          </span>
+                        </div>
+                        <span className="shrink-0 tabular-nums text-slate-700">
+                          <strong className="font-bold text-slate-900">
+                            {formatEur(item.spent)}
+                          </strong>{' '}
+                          <span className="text-slate-400">/ {formatEur(item.budget)}</span>
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full transition-all ${barColor}`}
+                          style={{ width: `${Math.min(100, Math.max(3, item.percent))}%` }}
+                        />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px]">
+                        <span className={`font-semibold ${statusTextClass}`}>
+                          {item.status === 'exceeded'
+                            ? `Ultrapassado em ${formatEur(Math.abs(item.remaining))}`
+                            : `Disponível: ${formatEur(item.remaining)}`}
+                        </span>
+                        <span className="font-semibold tabular-nums text-slate-500">
+                          {item.percent}%
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Evolução Mensal (Histórico Multi-mês) */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-3.5">
+            <div className="flex flex-nowrap items-center justify-between gap-2">
+              <h2 className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs font-bold uppercase tracking-wide text-slate-500">
+                <BarChart3 className="h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
+                <span className="truncate">Evolução mensal</span>
+              </h2>
+              <div className="flex shrink-0 items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+                {([6, 12] as const).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setHistoryMonths(n)}
+                    aria-pressed={historyMonths === n}
+                    className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition ${
+                      historyMonths === n
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {n} meses
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {monthlyHistory.activeMonthsCount === 0 ? (
+              <p className="mt-2 text-xs text-slate-400">
+                Sem movimentos nos últimos {historyMonths} meses para comparar.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {/* Gráfico de barras em pares (Entradas vs Saídas) */}
+                <div
+                  className="grid items-end gap-1.5 pt-2"
+                  style={{
+                    gridTemplateColumns: `repeat(${monthlyHistory.points.length}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {monthlyHistory.points.map((point) => {
+                    const isSelected = point.month === activeMonth;
+                    const incomeHeight =
+                      monthlyHistory.maxBarValue > 0 && point.income > 0
+                        ? Math.max(6, Math.round((point.income / monthlyHistory.maxBarValue) * 100))
+                        : 0;
+                    const expenseHeight =
+                      monthlyHistory.maxBarValue > 0 && point.expenses > 0
+                        ? Math.max(
+                            6,
+                            Math.round((point.expenses / monthlyHistory.maxBarValue) * 100),
+                          )
+                        : 0;
+
+                    return (
+                      <button
+                        key={point.month}
+                        type="button"
+                        onClick={() => onActiveMonthChange(point.month)}
+                        title={`${point.shortLabel}: Entradas ${formatEur(point.income)} · Saídas ${formatEur(point.expenses)} · Saldo ${formatEur(point.balance)}`}
+                        aria-label={`Ver ${point.shortLabel}`}
+                        className={`flex flex-col items-center gap-1 rounded-xl px-0.5 py-1 transition ${
+                          isSelected ? 'bg-teal-50/90 ring-1 ring-teal-200' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex h-24 w-full items-end justify-center gap-0.5 px-0.5">
+                          <div
+                            className="w-2.5 rounded-t bg-emerald-500/85 transition-all sm:w-3"
+                            style={{ height: `${incomeHeight}%` }}
+                          />
+                          <div
+                            className="w-2.5 rounded-t bg-rose-400/90 transition-all sm:w-3"
+                            style={{ height: `${expenseHeight}%` }}
+                          />
+                        </div>
+                        <span
+                          className={`text-[10px] font-semibold ${
+                            isSelected ? 'text-teal-800' : 'text-slate-500'
+                          }`}
+                        >
+                          {point.monthOnlyLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Legenda + Médias do período */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      Entradas
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-rose-400" />
+                      Saídas
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    Toca num mês para consultar
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 text-center sm:text-left">
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500">Média entradas</p>
+                    <p className="mt-0.5 text-xs font-bold tabular-nums text-emerald-700">
+                      {formatEur(monthlyHistory.avgIncome)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500">Média saídas</p>
+                    <p className="mt-0.5 text-xs font-bold tabular-nums text-rose-700">
+                      {formatEur(monthlyHistory.avgExpenses)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500">Poupança ({historyMonths}m)</p>
+                    <p
+                      className={`mt-0.5 text-xs font-bold tabular-nums ${
+                        monthlyHistory.totalBalance >= 0 ? 'text-teal-800' : 'text-rose-700'
+                      }`}
+                    >
+                      {formatEur(monthlyHistory.totalBalance)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* Despesas por categoria */}
           <section className="rounded-2xl border border-slate-200 bg-white p-3.5">
             <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -1389,6 +1643,14 @@ export function FinancesView({
         members={members}
         deviceId={deviceId}
         initialKind={recurringInitialKind}
+        onSaved={showToast}
+      />
+
+      <FinanceBudgetsModal
+        open={budgetsModalOpen}
+        onClose={() => setBudgetsModalOpen(false)}
+        categories={categories}
+        deviceId={deviceId}
         onSaved={showToast}
       />
     </div>

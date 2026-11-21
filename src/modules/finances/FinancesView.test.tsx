@@ -127,9 +127,43 @@ describe('FinancesView', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Resumo$/i }));
     expect(screen.getByText('Despesas por categoria')).toBeInTheDocument();
     expect(screen.getByText('Supermercado')).toBeInTheDocument();
+    expect(screen.getByText('Orçamentos mensais')).toBeInTheDocument();
+    expect(screen.getByText('Evolução mensal')).toBeInTheDocument();
+
+    // Toggle 12 months history & click previous month bar
+    fireEvent.click(screen.getByRole('button', { name: '12 meses' }));
+    expect(screen.getByRole('button', { name: '12 meses' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver Out 2026' }));
+    expect(onMonthChange).toHaveBeenCalledWith('2026-10');
 
     // Switch month
     fireEvent.click(screen.getByRole('button', { name: 'Mês seguinte' }));
     expect(onMonthChange).toHaveBeenCalledWith('2026-12');
+  });
+
+  it('mostra progresso e alertas de orçamentos mensais quando limites estão definidos', () => {
+    const categoriesWithBudget = categories.map((c) =>
+      c.id === 'fin-cat-groceries' ? { ...c, monthlyBudget: 100 } : c,
+    );
+
+    render(
+      <FinancesView
+        categories={categoriesWithBudget}
+        recurringRules={sampleRules}
+        transactions={sampleTransactions}
+        members={[]}
+        deviceId="dev-1"
+        uiDensity="complete"
+        activeMonth="2026-11"
+        onActiveMonthChange={vi.fn()}
+      />,
+    );
+
+    // Complete mode shows budget alert pill on top summary card
+    expect(screen.getByText(/1 orçamento em alerta este mês/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/1 orçamento em alerta este mês/i));
+    expect(screen.getByText(/Ultrapassado em/i)).toBeInTheDocument();
+    expect(screen.getByText('120%')).toBeInTheDocument();
   });
 });

@@ -16,6 +16,7 @@ import { getSectionColorStyle, SECTION_COLOR_OPTIONS } from '../../utils/section
 import {
   FINANCE_ICON_OPTIONS,
   FINANCE_KIND_PLURAL_LABELS,
+  formatEur,
   getFinanceCategoryVisual,
 } from '../finances/financeVisuals';
 
@@ -32,6 +33,15 @@ interface CategoryDraft {
   kind: FinanceKind;
   colorToken: SectionColorToken | string;
   icon: FinanceCategoryIconKey | string;
+  monthlyBudget: string;
+}
+
+function parseOptionalBudget(raw: string): number | null {
+  const cleaned = raw.trim().replace(',', '.');
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.round(num * 100) / 100;
 }
 
 const KINDS: FinanceKind[] = ['income', 'fixed', 'variable'];
@@ -116,12 +126,14 @@ export function FinanceCategoriesEditor({
     kind: 'variable',
     colorToken: 'teal',
     icon: 'tag',
+    monthlyBudget: '',
   });
   const [newDraft, setNewDraft] = useState<CategoryDraft>({
     name: '',
     kind: 'variable',
     colorToken: 'teal',
     icon: 'tag',
+    monthlyBudget: '',
   });
   const [deletingCat, setDeletingCat] = useState<FinanceCategoryConfig | null>(null);
   const [reassignTargetId, setReassignTargetId] = useState('');
@@ -176,10 +188,16 @@ export function FinanceCategoriesEditor({
       colorToken: newDraft.colorToken,
       icon: newDraft.icon,
       sortOrder: maxSort + 1,
-      monthlyBudget: null,
+      monthlyBudget: activeKind === 'income' ? null : parseOptionalBudget(newDraft.monthlyBudget),
     };
     await db.financeCategories.put(created);
-    setNewDraft({ name: '', kind: activeKind, colorToken: 'teal', icon: 'tag' });
+    setNewDraft({
+      name: '',
+      kind: activeKind,
+      colorToken: 'teal',
+      icon: 'tag',
+      monthlyBudget: '',
+    });
     onNotify?.(`Categoria "${name}" criada.`);
   };
 
@@ -191,6 +209,7 @@ export function FinanceCategoriesEditor({
       kind: cat.kind,
       colorToken: cat.colorToken,
       icon: cat.icon,
+      monthlyBudget: cat.monthlyBudget ? String(cat.monthlyBudget).replace('.', ',') : '',
     });
   };
 
@@ -204,6 +223,8 @@ export function FinanceCategoriesEditor({
       kind: editDraft.kind,
       colorToken: editDraft.colorToken,
       icon: editDraft.icon,
+      monthlyBudget:
+        editDraft.kind === 'income' ? null : parseOptionalBudget(editDraft.monthlyBudget),
       updatedAt: nowIso(),
       lastModifiedBy: deviceId,
     });
@@ -323,7 +344,7 @@ export function FinanceCategoriesEditor({
           if (isEditing) {
             return (
               <div key={cat.id} className="space-y-2.5 bg-slate-50/70 p-3">
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
                   <input
                     type="text"
                     value={editDraft.name}
@@ -345,6 +366,19 @@ export function FinanceCategoriesEditor({
                       </option>
                     ))}
                   </select>
+                  {editDraft.kind !== 'income' && (
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={editDraft.monthlyBudget}
+                      onChange={(e) =>
+                        setEditDraft({ ...editDraft, monthlyBudget: e.target.value })
+                      }
+                      aria-label="Orçamento mensal (€)"
+                      placeholder="Limite mensal € (opc.)"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs"
+                    />
+                  )}
                 </div>
 
                 <CategoryStylePickers draft={editDraft} onChange={setEditDraft} />
@@ -417,7 +451,14 @@ export function FinanceCategoriesEditor({
               <div className="flex min-w-0 items-center gap-2.5">
                 <TypeIconBadge visual={visual} size="sm" />
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-slate-800">{cat.name}</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="truncate text-xs font-semibold text-slate-800">{cat.name}</p>
+                    {cat.kind !== 'income' && cat.monthlyBudget !== null && cat.monthlyBudget > 0 && (
+                      <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+                        Limite: {formatEur(cat.monthlyBudget)}
+                      </span>
+                    )}
+                  </div>
                   {usage > 0 && (
                     <p className="text-[10px] text-slate-400">
                       {usage} {usage === 1 ? 'registo' : 'registos'}
@@ -474,13 +515,26 @@ export function FinanceCategoriesEditor({
         <p className="text-xs font-semibold text-slate-700">
           Nova categoria em {FINANCE_KIND_PLURAL_LABELS[activeKind]}
         </p>
-        <input
-          type="text"
-          value={newDraft.name}
-          onChange={(e) => setNewDraft({ ...newDraft, name: e.target.value })}
-          placeholder="Ex.: Ginásio, Desporto, Investimentos..."
-          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-        />
+        <div className="grid gap-2 sm:grid-cols-3">
+          <input
+            type="text"
+            value={newDraft.name}
+            onChange={(e) => setNewDraft({ ...newDraft, name: e.target.value })}
+            placeholder="Ex.: Ginásio, Desporto, Investimentos..."
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:col-span-2"
+          />
+          {activeKind !== 'income' && (
+            <input
+              type="text"
+              inputMode="decimal"
+              value={newDraft.monthlyBudget}
+              onChange={(e) => setNewDraft({ ...newDraft, monthlyBudget: e.target.value })}
+              placeholder="Limite mensal € (opc.)"
+              aria-label="Orçamento mensal para nova categoria"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+            />
+          )}
+        </div>
         <CategoryStylePickers draft={newDraft} onChange={setNewDraft} />
         {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
         <button

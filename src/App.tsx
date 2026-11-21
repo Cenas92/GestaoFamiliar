@@ -23,6 +23,7 @@ import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { FinancesView } from './modules/finances/FinancesView';
 import {
   currentMonthString,
+  ensureRecurringTransactionsForMonth,
   formatMonthShortPt,
   summarizeMonthFinances,
 } from './modules/finances/financeService';
@@ -185,6 +186,16 @@ export function App() {
   };
 
   const today = todayDateString();
+  const currentMonth = currentMonthString(today);
+  const financeRecurringSignature = useMemo(
+    () => data.financeRecurring.map((r) => `${r.id}:${r.updatedAt}:${r.isActive ? 1 : 0}`).join('|'),
+    [data.financeRecurring],
+  );
+
+  useEffect(() => {
+    if (!data.ready || !data.settings?.deviceId || data.financeRecurring.length === 0) return;
+    void ensureRecurringTransactionsForMonth(currentMonth, data.settings.deviceId);
+  }, [data.ready, data.settings?.deviceId, currentMonth, financeRecurringSignature, data.financeRecurring.length]);
   const readyRecipesCount = useMemo(() => {
     if (!data.ready || !data.settings || !(activeTab === 'meals' && mealsSubTab === 'recipes')) {
       return 0;
@@ -567,6 +578,8 @@ export function App() {
             recipes={data.recipes}
             mealPlan={data.mealPlan}
             shoppingItems={data.shoppingItems}
+            financeCategories={data.financeCategories}
+            financeTransactions={data.financeTransactions}
             members={data.members}
             uiDensity={uiDensity}
             onNavigate={navigate}
@@ -675,6 +688,7 @@ export function App() {
             stockLots={data.stockLots}
             locations={data.locations}
             supermarketSections={data.supermarketSections}
+            financeCategories={data.financeCategories}
             expiryWarningDays={data.settings.expiryWarningDays}
             deviceId={data.settings.deviceId}
             uiDensity={uiDensity}

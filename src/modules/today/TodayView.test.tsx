@@ -292,4 +292,72 @@ describe('TodayView calm summary', () => {
     expect(screen.queryByText('Crepes')).not.toBeInTheDocument();
     await db.shoppingItems.clear();
   });
+
+  it('shows upcoming fixed bills in Clean mode without monthly summary, and shows monthly summary in Complete mode', () => {
+    const today = todayDateString();
+    const month = today.slice(0, 7);
+    const soonDate = addDaysToDateString(today, 2);
+
+    const financeTxs = [
+      {
+        id: 'fin-bill-1',
+        title: 'Luz EDP',
+        kind: 'fixed' as const,
+        categoryId: 'fin-cat-utilities',
+        amount: 72,
+        date: soonDate,
+        month,
+        status: 'planned' as const,
+        recurringRuleId: 'r-luz',
+        memberId: null,
+        notes: '',
+        photoAttachmentId: null,
+        isWarranty: false,
+        warrantyExpiresAt: null,
+        warrantyStore: '',
+        excludeFromTotals: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      },
+    ];
+
+    const { rerender } = render(
+      <TodayView
+        settings={SETTINGS}
+        locations={LOCATIONS}
+        catalogItems={CATALOG}
+        stockLots={[]}
+        recipes={[]}
+        mealPlan={[]}
+        financeTransactions={financeTxs}
+        members={MEMBERS}
+        uiDensity="clean"
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Despesas fixas a vencer \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText('Luz EDP')).toBeInTheDocument();
+    expect(screen.queryByText(/Resumo Financeiro/i)).not.toBeInTheDocument();
+
+    rerender(
+      <TodayView
+        settings={SETTINGS}
+        locations={LOCATIONS}
+        catalogItems={CATALOG}
+        stockLots={[]}
+        recipes={[]}
+        mealPlan={[]}
+        financeTransactions={financeTxs}
+        members={MEMBERS}
+        uiDensity="complete"
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Despesas fixas a vencer \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Resumo Financeiro/i)).toBeInTheDocument();
+  });
 });
