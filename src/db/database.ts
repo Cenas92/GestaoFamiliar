@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import {
   buildStarterCatalog,
+  buildStarterFinanceCategories,
   buildStarterLocations,
   buildStarterSupermarketSections,
 } from '../data/starterCatalog';
@@ -8,6 +9,9 @@ import type {
   AppSettings,
   AttachmentRecord,
   CatalogItem,
+  FinanceCategoryConfig,
+  FinanceRecurringRule,
+  FinanceTransaction,
   HouseholdMember,
   MealPlanEntry,
   Recipe,
@@ -28,6 +32,9 @@ export class FamilyDatabase extends Dexie {
   shoppingItems!: Table<ShoppingItem, string>;
   members!: Table<HouseholdMember, string>;
   attachments!: Table<AttachmentRecord, string>;
+  financeCategories!: Table<FinanceCategoryConfig, string>;
+  financeRecurring!: Table<FinanceRecurringRule, string>;
+  financeTransactions!: Table<FinanceTransaction, string>;
   settings!: Table<AppSettings, string>;
 
   constructor(name = 'GestaoFamiliarDB') {
@@ -55,6 +62,22 @@ export class FamilyDatabase extends Dexie {
       attachments: 'id, updatedAt, deletedAt, uploadedToDrive',
       settings: 'id',
     });
+    this.version(3).stores({
+      locations: 'id, sortOrder, locationType, updatedAt, deletedAt',
+      supermarketSections: 'id, sortOrder, updatedAt, deletedAt',
+      catalogItems: 'id, name, category, defaultLocationId, supermarketSection, updatedAt, deletedAt',
+      stockLots: 'id, catalogItemId, locationId, expiresAt, frozenOrCookedAt, updatedAt, deletedAt',
+      recipes: 'id, title, category, updatedAt, deletedAt',
+      mealPlan: 'id, date, slot, recipeId, updatedAt, deletedAt',
+      shoppingItems: 'id, catalogItemId, section, checked, updatedAt, deletedAt',
+      members: 'id, role, updatedAt, deletedAt',
+      attachments: 'id, updatedAt, deletedAt, uploadedToDrive',
+      financeCategories: 'id, kind, sortOrder, updatedAt, deletedAt',
+      financeRecurring: 'id, kind, categoryId, isActive, updatedAt, deletedAt',
+      financeTransactions:
+        'id, month, date, kind, categoryId, status, recurringRuleId, isWarranty, updatedAt, deletedAt',
+      settings: 'id',
+    });
   }
 }
 
@@ -63,10 +86,18 @@ export const db = new FamilyDatabase();
 export async function ensureDatabaseSeeded(database: FamilyDatabase = db): Promise<AppSettings> {
   const existingSettings = await database.settings.get('singleton');
   if (existingSettings?.initialized) {
-    const sectionCount = await database.supermarketSections.count();
+    const [sectionCount, financeCatCount] = await Promise.all([
+      database.supermarketSections.count(),
+      database.financeCategories.count(),
+    ]);
     if (sectionCount === 0) {
       await database.supermarketSections.bulkPut(
         buildStarterSupermarketSections(existingSettings.deviceId),
+      );
+    }
+    if (financeCatCount === 0) {
+      await database.financeCategories.bulkPut(
+        buildStarterFinanceCategories(existingSettings.deviceId),
       );
     }
     return existingSettings;
@@ -88,7 +119,13 @@ export async function ensureDatabaseSeeded(database: FamilyDatabase = db): Promi
 
   await database.transaction(
     'rw',
-    [database.settings, database.locations, database.supermarketSections, database.catalogItems],
+    [
+      database.settings,
+      database.locations,
+      database.supermarketSections,
+      database.financeCategories,
+      database.catalogItems,
+    ],
     async () => {
       await database.settings.put(initialSettings);
 
@@ -100,6 +137,11 @@ export async function ensureDatabaseSeeded(database: FamilyDatabase = db): Promi
       const sectionCount = await database.supermarketSections.count();
       if (sectionCount === 0) {
         await database.supermarketSections.bulkPut(buildStarterSupermarketSections(deviceId));
+      }
+
+      const financeCatCount = await database.financeCategories.count();
+      if (financeCatCount === 0) {
+        await database.financeCategories.bulkPut(buildStarterFinanceCategories(deviceId));
       }
 
       const catCount = await database.catalogItems.count();

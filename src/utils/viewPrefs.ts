@@ -15,6 +15,7 @@ export const UI_DENSITY_STORAGE_KEY = 'gestao_familiar_ui_density_mode';
 export const STOCK_PREFS_STORAGE_KEY = 'gestao_familiar_stock_view_prefs';
 export const RECIPE_PREFS_STORAGE_KEY = 'gestao_familiar_recipe_view_prefs';
 export const SHOPPING_PREFS_STORAGE_KEY = 'gestao_familiar_shopping_view_prefs';
+export const FINANCE_PREFS_STORAGE_KEY = 'gestao_familiar_finance_view_prefs';
 
 const COLLECTION_VIEW_PRESET_TARGETS: {
   storageKey: string;
@@ -28,6 +29,7 @@ const COLLECTION_VIEW_PRESET_TARGETS: {
     defaultGroupEnabled: false,
   },
   { storageKey: SHOPPING_PREFS_STORAGE_KEY, defaultSortMode: 'section', defaultGroupEnabled: true },
+  { storageKey: FINANCE_PREFS_STORAGE_KEY, defaultSortMode: 'date_desc', defaultGroupEnabled: false },
 ];
 
 const VALID_VIEW_MODES: readonly CollectionViewMode[] = ['detailed', 'medium', 'line', 'grid'];

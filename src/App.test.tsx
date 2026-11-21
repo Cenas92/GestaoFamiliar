@@ -27,15 +27,22 @@ describe('App integration', () => {
       expect(screen.getByText(/produtos em casa/i)).toBeInTheDocument();
     });
 
-    const recipesButtons = screen.getAllByRole('button', { name: /^Receitas$/i });
-    fireEvent.click(recipesButtons[0]);
+    const mealsButtons = screen.getAllByRole('button', { name: /^Refeições$/i });
+    fireEvent.click(mealsButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Ementa Semanal' })).toBeInTheDocument();
+    });
+
+    const recipesSubTab = screen.getByRole('tab', { name: /Receitas/i });
+    fireEvent.click(recipesSubTab);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'As Nossas Receitas' })).toBeInTheDocument();
     });
 
-    const plannerButtons = screen.getAllByRole('button', { name: /^Ementa$/i });
-    fireEvent.click(plannerButtons[0]);
+    const plannerSubTab = screen.getByRole('tab', { name: /Ementa/i });
+    fireEvent.click(plannerSubTab);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Ementa Semanal' })).toBeInTheDocument();
@@ -46,6 +53,13 @@ describe('App integration', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Lista de Compras' })).toBeInTheDocument();
+    });
+
+    const financesButtons = screen.getAllByRole('button', { name: /^Finanças$/i });
+    fireEvent.click(financesButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Finanças da Casa' })).toBeInTheDocument();
     });
 
     const settingsButton = screen.getByRole('button', { name: /Definições e Família/i });
@@ -107,7 +121,11 @@ describe('App integration', () => {
     );
 
     // Switch away and back to Stock -> custom Quadrados view stays intact
-    fireEvent.click(screen.getAllByRole('button', { name: /^Receitas$/i })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Refeições$/i })[0]);
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /Receitas/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /Receitas/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Cartões padrão' })).toHaveAttribute(
         'aria-pressed',

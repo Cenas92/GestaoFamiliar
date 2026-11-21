@@ -127,6 +127,9 @@ export function useAutoSync(settings: AppSettings | undefined) {
       db.mealPlan,
       db.shoppingItems,
       db.members,
+      db.financeCategories,
+      db.financeRecurring,
+      db.financeTransactions,
       db.attachments,
     ];
 

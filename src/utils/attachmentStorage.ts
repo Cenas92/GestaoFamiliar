@@ -35,19 +35,24 @@ export async function saveImageAttachment(file: File): Promise<SavedImageAttachm
 }
 
 /**
- * Tombstones an attachment when no active recipe or shopping item references it anymore.
+ * Tombstones an attachment when no active recipe, shopping item or finance transaction references it anymore.
  */
 export async function softDeleteAttachmentIfUnused(
   attachmentId: string | null | undefined,
-  options?: { excludeShoppingId?: string; excludeRecipeId?: string },
+  options?: {
+    excludeShoppingId?: string;
+    excludeRecipeId?: string;
+    excludeFinanceTransactionId?: string;
+  },
 ): Promise<void> {
   if (!attachmentId) return;
   const rec = await db.attachments.get(attachmentId);
   if (!rec || rec.deletedAt) return;
 
-  const [shoppingRefs, recipeRefs] = await Promise.all([
+  const [shoppingRefs, recipeRefs, financeRefs] = await Promise.all([
     db.shoppingItems.toArray(),
     db.recipes.toArray(),
+    db.financeTransactions.toArray(),
   ]);
 
   const usedInShopping = shoppingRefs.some(
@@ -65,6 +70,14 @@ export async function softDeleteAttachmentIfUnused(
       (r.photoAttachmentId === attachmentId || r.docAttachmentId === attachmentId),
   );
   if (usedInRecipes) return;
+
+  const usedInFinances = financeRefs.some(
+    (f) =>
+      !f.deletedAt &&
+      f.id !== options?.excludeFinanceTransactionId &&
+      f.photoAttachmentId === attachmentId,
+  );
+  if (usedInFinances) return;
 
   const now = nowIso();
   await db.attachments.put({

@@ -1,6 +1,7 @@
 import type {
   CatalogCategory,
   CatalogItem,
+  FinanceCategoryConfig,
   LocationColorToken,
   LocationType,
   StorageLocation,
@@ -9,6 +10,7 @@ import type {
   TrackingMode,
   Unit,
 } from '../types/domain';
+import { DEFAULT_FINANCE_CATEGORY_SPECS } from '../modules/finances/financeVisuals';
 import { DEFAULT_SUPERMARKET_SECTION_SPECS } from '../utils/sectionVisuals';
 
 const SEED_TIMESTAMP = '2026-01-01T00:00:00.000Z';
@@ -239,6 +241,22 @@ export function buildStarterSupermarketSections(deviceId: string): SupermarketSe
     colorToken: spec.colorToken,
     icon: spec.icon,
     sortOrder: spec.sortOrder,
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
+    deletedAt: null,
+    lastModifiedBy: deviceId,
+  }));
+}
+
+export function buildStarterFinanceCategories(deviceId: string): FinanceCategoryConfig[] {
+  return DEFAULT_FINANCE_CATEGORY_SPECS.map((spec) => ({
+    id: spec.id,
+    name: spec.name,
+    kind: spec.kind,
+    colorToken: spec.colorToken,
+    icon: spec.icon,
+    sortOrder: spec.sortOrder,
+    monthlyBudget: null,
     createdAt: SEED_TIMESTAMP,
     updatedAt: SEED_TIMESTAMP,
     deletedAt: null,

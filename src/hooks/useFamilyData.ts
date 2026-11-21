@@ -5,6 +5,9 @@ import type {
   AppSettings,
   AttachmentRecord,
   CatalogItem,
+  FinanceCategoryConfig,
+  FinanceRecurringRule,
+  FinanceTransaction,
   HouseholdMember,
   MealPlanEntry,
   Recipe,
@@ -26,6 +29,9 @@ export interface FamilyDataState {
   shoppingItems: ShoppingItem[];
   members: HouseholdMember[];
   attachments: AttachmentRecord[];
+  financeCategories: FinanceCategoryConfig[];
+  financeRecurring: FinanceRecurringRule[];
+  financeTransactions: FinanceTransaction[];
 }
 
 export function useFamilyData(): FamilyDataState {
@@ -132,6 +138,37 @@ export function useFamilyData(): FamilyDataState {
     [] as AttachmentRecord[],
   );
 
+  const financeCategories = useLiveQuery(
+    async () => {
+      const all = await db.financeCategories.toArray();
+      return all
+        .filter((c) => !c.deletedAt)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'pt-PT'));
+    },
+    [],
+    [] as FinanceCategoryConfig[],
+  );
+
+  const financeRecurring = useLiveQuery(
+    async () => {
+      const all = await db.financeRecurring.toArray();
+      return all
+        .filter((r) => !r.deletedAt)
+        .sort((a, b) => a.dayOfMonth - b.dayOfMonth || a.title.localeCompare(b.title, 'pt-PT'));
+    },
+    [],
+    [] as FinanceRecurringRule[],
+  );
+
+  const financeTransactions = useLiveQuery(
+    async () => {
+      const all = await db.financeTransactions.toArray();
+      return all.filter((t) => !t.deletedAt);
+    },
+    [],
+    [] as FinanceTransaction[],
+  );
+
   return {
     ready: seeded && settings !== undefined,
     settings,
@@ -144,5 +181,8 @@ export function useFamilyData(): FamilyDataState {
     shoppingItems,
     members,
     attachments,
+    financeCategories,
+    financeRecurring,
+    financeTransactions,
   };
 }

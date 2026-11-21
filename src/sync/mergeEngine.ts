@@ -1,6 +1,9 @@
 import type {
   AttachmentRecord,
   CatalogItem,
+  FinanceCategoryConfig,
+  FinanceRecurringRule,
+  FinanceTransaction,
   HouseholdMember,
   MealPlanEntry,
   Recipe,
@@ -34,6 +37,9 @@ export interface FamilySyncSnapshot {
   mealPlan: MealPlanEntry[];
   shoppingItems: ShoppingItem[];
   members: HouseholdMember[];
+  financeCategories?: FinanceCategoryConfig[];
+  financeRecurring?: FinanceRecurringRule[];
+  financeTransactions?: FinanceTransaction[];
   attachmentManifest: AttachmentManifestEntry[];
 }
 
@@ -192,6 +198,18 @@ export function mergeFamilySnapshots(
   const mealPlan = mergeSyncCollections(local.mealPlan, remote.mealPlan);
   const shoppingItems = mergeSyncCollections(local.shoppingItems, remote.shoppingItems);
   const members = mergeSyncCollections(local.members, remote.members);
+  const financeCategories = mergeSyncCollections(
+    local.financeCategories ?? [],
+    remote.financeCategories ?? [],
+  );
+  const financeRecurring = mergeSyncCollections(
+    local.financeRecurring ?? [],
+    remote.financeRecurring ?? [],
+  );
+  const financeTransactions = mergeSyncCollections(
+    local.financeTransactions ?? [],
+    remote.financeTransactions ?? [],
+  );
 
   const attachmentMerge = mergeAttachmentManifest(localAttachments, remote.attachmentManifest);
 
@@ -204,6 +222,9 @@ export function mergeFamilySnapshots(
     mealPlan,
     shoppingItems,
     members,
+    financeCategories,
+    financeRecurring,
+    financeTransactions,
   ];
 
   const addedFromRemote = collections.reduce((acc, c) => acc + c.addedFromRemote, 0);
@@ -223,6 +244,9 @@ export function mergeFamilySnapshots(
       mealPlan: mealPlan.merged,
       shoppingItems: shoppingItems.merged,
       members: members.merged,
+      financeCategories: financeCategories.merged,
+      financeRecurring: financeRecurring.merged,
+      financeTransactions: financeTransactions.merged,
       attachmentManifest: attachmentMerge.mergedManifest,
     },
     stats: {

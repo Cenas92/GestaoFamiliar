@@ -24,6 +24,7 @@ import {
   Trash2,
   Upload,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { APP_INFO } from '../../appInfo';
 import {
@@ -51,6 +52,9 @@ import { clearGoogleSyncLinked, markGoogleSyncLinked } from '../../sync/useAutoS
 import type {
   AppSettings,
   CatalogItem,
+  FinanceCategoryConfig,
+  FinanceRecurringRule,
+  FinanceTransaction,
   HouseholdMember,
   HouseholdRole,
   LocationColorToken,
@@ -62,6 +66,7 @@ import type {
 import { createSyncMetadata, nowIso } from '../../utils/id';
 import type { UiDensityMode } from '../../utils/viewPrefs';
 import { CatalogManagerModal } from '../stock/CatalogManagerModal';
+import { FinanceCategoriesEditor } from './FinanceCategoriesEditor';
 import { SupermarketSectionsEditor } from './SupermarketSectionsEditor';
 
 interface SettingsViewProps {
@@ -71,6 +76,9 @@ interface SettingsViewProps {
   supermarketSections?: SupermarketSectionConfig[];
   catalogItems?: CatalogItem[];
   shoppingItems?: ShoppingItem[];
+  financeCategories?: FinanceCategoryConfig[];
+  financeRecurring?: FinanceRecurringRule[];
+  financeTransactions?: FinanceTransaction[];
   uiDensity?: UiDensityMode;
   onChangeUiDensity?: (mode: UiDensityMode) => void;
   onSyncNow: () => Promise<string>;
@@ -205,6 +213,7 @@ type SettingsSectionId =
   | 'members'
   | 'locations'
   | 'sections'
+  | 'finance_categories'
   | 'catalog'
   | 'sync'
   | 'backup'
@@ -262,6 +271,9 @@ export function SettingsView({
   supermarketSections = [],
   catalogItems = [],
   shoppingItems = [],
+  financeCategories = [],
+  financeRecurring = [],
+  financeTransactions = [],
   uiDensity = 'clean',
   onChangeUiDensity,
   onSyncNow,
@@ -843,6 +855,23 @@ export function SettingsView({
           sections={supermarketSections}
           catalogItems={catalogItems}
           shoppingItems={shoppingItems}
+          deviceId={settings.deviceId}
+          onNotify={(msg) => setStatusMsg(msg)}
+        />
+      </AccordionSection>
+
+      {/* Finance Categories */}
+      <AccordionSection
+        title="Categorias Financeiras"
+        icon={<Wallet className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${financeCategories.length || 20}`}
+        isOpen={openSection === 'finance_categories'}
+        onToggle={() => toggleSection('finance_categories')}
+      >
+        <FinanceCategoriesEditor
+          categories={financeCategories}
+          recurringRules={financeRecurring}
+          transactions={financeTransactions}
           deviceId={settings.deviceId}
           onNotify={(msg) => setStatusMsg(msg)}
         />

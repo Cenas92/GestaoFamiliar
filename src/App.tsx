@@ -13,11 +13,20 @@ import {
   Settings,
   ShoppingCart,
   Sparkles,
+  UtensilsCrossed,
+  Wallet,
   WifiOff,
 } from 'lucide-react';
 import { APP_INFO } from './appInfo';
 import { useFamilyData } from './hooks/useFamilyData';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
+import { FinancesView } from './modules/finances/FinancesView';
+import {
+  currentMonthString,
+  formatMonthShortPt,
+  summarizeMonthFinances,
+} from './modules/finances/financeService';
+import { formatEur } from './modules/finances/financeVisuals';
 import { PlannerView } from './modules/planner/PlannerView';
 import { evaluateRecipeMatch } from './modules/recipes/matchingEngine';
 import { RecipesView } from './modules/recipes/RecipesView';
@@ -41,26 +50,38 @@ import {
   type UiDensityMode,
 } from './utils/viewPrefs';
 
-const HASH_TO_TAB: Record<string, AppTab> = {
-  '#today': 'today',
-  '#stock': 'stock',
-  '#recipes': 'recipes',
-  '#planner': 'planner',
-  '#shopping': 'shopping',
-  '#settings': 'settings',
+type PrimaryTab = 'today' | 'stock' | 'meals' | 'shopping' | 'finances' | 'settings';
+type MealsSubTab = 'planner' | 'recipes';
+
+const HASH_TO_ROUTE: Record<string, { tab: PrimaryTab; mealsSubTab?: MealsSubTab }> = {
+  '#today': { tab: 'today' },
+  '#stock': { tab: 'stock' },
+  '#meals': { tab: 'meals' },
+  '#recipes': { tab: 'meals', mealsSubTab: 'recipes' },
+  '#planner': { tab: 'meals', mealsSubTab: 'planner' },
+  '#shopping': { tab: 'shopping' },
+  '#finances': { tab: 'finances' },
+  '#settings': { tab: 'settings' },
 };
 
-function readInitialTab(): AppTab {
-  return HASH_TO_TAB[window.location.hash] ?? 'today';
+function readInitialRoute(): { tab: PrimaryTab; mealsSubTab: MealsSubTab } {
+  const match = HASH_TO_ROUTE[window.location.hash];
+  return {
+    tab: match?.tab ?? 'today',
+    mealsSubTab: match?.mealsSubTab ?? 'planner',
+  };
 }
 
 export function App() {
   const data = useFamilyData();
-  const [activeTab, setActiveTab] = useState<AppTab>(readInitialTab);
+  const initialRoute = readInitialRoute();
+  const [activeTab, setActiveTab] = useState<PrimaryTab>(initialRoute.tab);
+  const [mealsSubTab, setMealsSubTab] = useState<MealsSubTab>(initialRoute.mealsSubTab);
   const [uiDensity, setUiDensity] = useState<UiDensityMode>(() => loadUiDensityMode());
   const [openStockCreate, setOpenStockCreate] = useState(false);
   const [openRecipeCreate, setOpenRecipeCreate] = useState(false);
   const [plannerWeekStart, setPlannerWeekStart] = useState(() => getWeekStartMonday());
+  const [financeMonth, setFinanceMonth] = useState(() => currentMonthString());
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [headerNotice, setHeaderNotice] = useState<{ text: string; isError: boolean } | null>(null);
 
@@ -110,7 +131,13 @@ export function App() {
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
     const onOffline = () => setIsOnline(false);
-    const onHashChange = () => setActiveTab(readInitialTab());
+    const onHashChange = () => {
+      const route = readInitialRoute();
+      setActiveTab(route.tab);
+      if (HASH_TO_ROUTE[window.location.hash]?.mealsSubTab) {
+        setMealsSubTab(route.mealsSubTab);
+      }
+    };
 
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
@@ -123,8 +150,19 @@ export function App() {
   }, []);
 
   const navigate = (tab: AppTab) => {
+    if (tab === 'recipes' || tab === 'planner') {
+      setActiveTab('meals');
+      setMealsSubTab(tab);
+      window.location.hash = `#${tab}`;
+      return;
+    }
     setActiveTab(tab);
     window.location.hash = `#${tab}`;
+  };
+
+  const selectMealsSubTab = (sub: MealsSubTab) => {
+    setMealsSubTab(sub);
+    window.location.hash = `#${sub}`;
   };
 
   const handleSyncNow = async (): Promise<string> => {
@@ -148,7 +186,9 @@ export function App() {
 
   const today = todayDateString();
   const readyRecipesCount = useMemo(() => {
-    if (!data.ready || !data.settings || activeTab !== 'recipes') return 0;
+    if (!data.ready || !data.settings || !(activeTab === 'meals' && mealsSubTab === 'recipes')) {
+      return 0;
+    }
     const expiryWarningDays = data.settings.expiryWarningDays;
     return data.recipes.filter(
       (r) =>
@@ -172,8 +212,18 @@ export function App() {
     data.locations,
     data.members,
     activeTab,
+    mealsSubTab,
     today,
   ]);
+
+  const financeHeaderSummary = useMemo(() => {
+    if (!data.ready || activeTab !== 'finances') return null;
+    return summarizeMonthFinances(
+      financeMonth,
+      data.financeTransactions,
+      data.financeCategories,
+    );
+  }, [data.ready, activeTab, financeMonth, data.financeTransactions, data.financeCategories]);
 
   const lowStockCount = useMemo(() => {
     if (!data.ready || !data.settings || uiDensity !== 'complete' || activeTab !== 'stock') {
@@ -228,23 +278,23 @@ export function App() {
           badgeClass: 'bg-cyan-100 text-cyan-700',
         };
       }
-      case 'recipes': {
-        const count = data.recipes.length;
-        return {
-          title: 'As Nossas Receitas',
-          subtitle:
-            uiDensity === 'complete'
-              ? `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
-                  readyRecipesCount === 1 ? 'pronta 100%' : 'prontas 100%'
-                }`
-              : `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
-                  readyRecipesCount === 1 ? 'pronta' : 'prontas'
-                }`,
-          Icon: ChefHat,
-          badgeClass: 'bg-amber-100 text-amber-700',
-        };
-      }
-      case 'planner': {
+      case 'meals': {
+        if (mealsSubTab === 'recipes') {
+          const count = data.recipes.length;
+          return {
+            title: 'As Nossas Receitas',
+            subtitle:
+              uiDensity === 'complete'
+                ? `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
+                    readyRecipesCount === 1 ? 'pronta 100%' : 'prontas 100%'
+                  }`
+                : `${count} ${count === 1 ? 'receita' : 'receitas'} · ${readyRecipesCount} ${
+                    readyRecipesCount === 1 ? 'pronta' : 'prontas'
+                  }`,
+            Icon: ChefHat,
+            badgeClass: 'bg-amber-100 text-amber-700',
+          };
+        }
         const weekEnd = addDaysToDateString(plannerWeekStart, 6);
         return {
           title: 'Ementa Semanal',
@@ -265,10 +315,19 @@ export function App() {
           Icon: ShoppingCart,
           badgeClass: 'bg-emerald-100 text-emerald-700',
         };
+      case 'finances':
+        return {
+          title: 'Finanças da Casa',
+          subtitle: financeHeaderSummary
+            ? `${formatMonthShortPt(financeMonth)} · Saldo ${formatEur(financeHeaderSummary.balanceTotal)}`
+            : formatMonthShortPt(financeMonth),
+          Icon: Wallet,
+          badgeClass: 'bg-violet-100 text-violet-700',
+        };
       case 'settings':
         return {
           title: 'Definições e Família',
-          subtitle: 'Família, locais, catálogo e sincronização',
+          subtitle: 'Família, locais, finanças e sincronização',
           Icon: Settings,
           badgeClass: 'bg-slate-200 text-slate-700',
         };
@@ -276,17 +335,17 @@ export function App() {
   })();
   const HeaderIcon = headerMeta.Icon;
 
-  const navItems: { id: AppTab; label: string; icon: typeof Home; badge?: number }[] = [
+  const navItems: { id: PrimaryTab; label: string; icon: typeof Home; badge?: number }[] = [
     { id: 'today', label: 'Hoje', icon: Home },
     { id: 'stock', label: 'Stock', icon: Package },
-    { id: 'recipes', label: 'Receitas', icon: ChefHat },
-    { id: 'planner', label: 'Ementa', icon: CalendarDays },
+    { id: 'meals', label: 'Refeições', icon: UtensilsCrossed },
     {
       id: 'shopping',
       label: 'Compras',
       icon: ShoppingCart,
       badge: pendingShoppingCount > 0 ? pendingShoppingCount : undefined,
     },
+    { id: 'finances', label: 'Finanças', icon: Wallet },
   ];
 
   return (
@@ -539,37 +598,74 @@ export function App() {
           />
         )}
 
-        {activeTab === 'recipes' && (
-          <RecipesView
-            recipes={data.recipes}
-            stockLots={data.stockLots}
-            catalogItems={data.catalogItems}
-            locations={data.locations}
-            supermarketSections={data.supermarketSections}
-            members={data.members}
-            shoppingItems={data.shoppingItems}
-            expiryWarningDays={data.settings.expiryWarningDays}
-            deviceId={data.settings.deviceId}
-            uiDensity={uiDensity}
-            openCreateInitially={openRecipeCreate}
-            onConsumeCreateInitial={() => setOpenRecipeCreate(false)}
-          />
-        )}
+        {activeTab === 'meals' && (
+          <div className="space-y-3">
+            <div
+              className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xs"
+              role="tablist"
+              aria-label="Secções de Refeições"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mealsSubTab === 'planner'}
+                onClick={() => selectMealsSubTab('planner')}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition ${
+                  mealsSubTab === 'planner'
+                    ? 'bg-indigo-50 text-indigo-800 shadow-2xs'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Ementa</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mealsSubTab === 'recipes'}
+                onClick={() => selectMealsSubTab('recipes')}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition ${
+                  mealsSubTab === 'recipes'
+                    ? 'bg-amber-50 text-amber-800 shadow-2xs'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <ChefHat className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Receitas ({data.recipes.length})</span>
+              </button>
+            </div>
 
-        {activeTab === 'planner' && (
-          <PlannerView
-            mealPlan={data.mealPlan}
-            recipes={data.recipes}
-            stockLots={data.stockLots}
-            catalogItems={data.catalogItems}
-            locations={data.locations}
-            members={data.members}
-            shoppingItems={data.shoppingItems}
-            expiryWarningDays={data.settings.expiryWarningDays}
-            deviceId={data.settings.deviceId}
-            weekStart={plannerWeekStart}
-            onWeekStartChange={setPlannerWeekStart}
-          />
+            {mealsSubTab === 'recipes' ? (
+              <RecipesView
+                recipes={data.recipes}
+                stockLots={data.stockLots}
+                catalogItems={data.catalogItems}
+                locations={data.locations}
+                supermarketSections={data.supermarketSections}
+                members={data.members}
+                shoppingItems={data.shoppingItems}
+                expiryWarningDays={data.settings.expiryWarningDays}
+                deviceId={data.settings.deviceId}
+                uiDensity={uiDensity}
+                openCreateInitially={openRecipeCreate}
+                onConsumeCreateInitial={() => setOpenRecipeCreate(false)}
+              />
+            ) : (
+              <PlannerView
+                mealPlan={data.mealPlan}
+                recipes={data.recipes}
+                stockLots={data.stockLots}
+                catalogItems={data.catalogItems}
+                locations={data.locations}
+                members={data.members}
+                shoppingItems={data.shoppingItems}
+                expiryWarningDays={data.settings.expiryWarningDays}
+                deviceId={data.settings.deviceId}
+                weekStart={plannerWeekStart}
+                onWeekStartChange={setPlannerWeekStart}
+              />
+            )}
+          </div>
         )}
 
         {activeTab === 'shopping' && (
@@ -585,6 +681,19 @@ export function App() {
           />
         )}
 
+        {activeTab === 'finances' && (
+          <FinancesView
+            categories={data.financeCategories}
+            recurringRules={data.financeRecurring}
+            transactions={data.financeTransactions}
+            members={data.members}
+            deviceId={data.settings.deviceId}
+            uiDensity={uiDensity}
+            activeMonth={financeMonth}
+            onActiveMonthChange={setFinanceMonth}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <SettingsView
             settings={data.settings}
@@ -593,6 +702,9 @@ export function App() {
             supermarketSections={data.supermarketSections}
             catalogItems={data.catalogItems}
             shoppingItems={data.shoppingItems}
+            financeCategories={data.financeCategories}
+            financeRecurring={data.financeRecurring}
+            financeTransactions={data.financeTransactions}
             uiDensity={uiDensity}
             onChangeUiDensity={handleChangeUiDensity}
             onSyncNow={handleSyncNow}

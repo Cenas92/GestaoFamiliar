@@ -46,6 +46,9 @@ export async function buildLocalSnapshot(): Promise<{
     mealPlan,
     shoppingItems,
     members,
+    financeCategories,
+    financeRecurring,
+    financeTransactions,
     attachments,
   ] = await Promise.all([
     db.settings.get('singleton'),
@@ -57,6 +60,9 @@ export async function buildLocalSnapshot(): Promise<{
     db.mealPlan.toArray(),
     db.shoppingItems.toArray(),
     db.members.toArray(),
+    db.financeCategories.toArray(),
+    db.financeRecurring.toArray(),
+    db.financeTransactions.toArray(),
     db.attachments.toArray(),
   ]);
 
@@ -77,6 +83,9 @@ export async function buildLocalSnapshot(): Promise<{
       mealPlan,
       shoppingItems,
       members,
+      financeCategories,
+      financeRecurring,
+      financeTransactions,
       attachmentManifest: attachments.map((a) => ({
         id: a.id,
         fileName: a.fileName,
@@ -92,6 +101,9 @@ export async function buildLocalSnapshot(): Promise<{
 
 export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Promise<void> {
   const supermarketSections = snapshot.supermarketSections ?? [];
+  const financeCategories = snapshot.financeCategories ?? [];
+  const financeRecurring = snapshot.financeRecurring ?? [];
+  const financeTransactions = snapshot.financeTransactions ?? [];
   await withSuppressedAutoSync(async () => {
     await db.transaction(
       'rw',
@@ -104,6 +116,9 @@ export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Prom
         db.mealPlan,
         db.shoppingItems,
         db.members,
+        db.financeCategories,
+        db.financeRecurring,
+        db.financeTransactions,
       ],
       async () => {
         if (snapshot.locations.length) await db.locations.bulkPut(snapshot.locations);
@@ -114,6 +129,9 @@ export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Prom
         if (snapshot.mealPlan.length) await db.mealPlan.bulkPut(snapshot.mealPlan);
         if (snapshot.shoppingItems.length) await db.shoppingItems.bulkPut(snapshot.shoppingItems);
         if (snapshot.members.length) await db.members.bulkPut(snapshot.members);
+        if (financeCategories.length) await db.financeCategories.bulkPut(financeCategories);
+        if (financeRecurring.length) await db.financeRecurring.bulkPut(financeRecurring);
+        if (financeTransactions.length) await db.financeTransactions.bulkPut(financeTransactions);
       },
     );
   });

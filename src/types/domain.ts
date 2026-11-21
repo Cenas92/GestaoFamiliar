@@ -233,4 +233,82 @@ export interface AppSettings {
   initialized: boolean;
 }
 
-export type AppTab = 'today' | 'stock' | 'recipes' | 'planner' | 'shopping' | 'settings';
+export type FinanceKind = 'income' | 'fixed' | 'variable';
+
+export type FinanceRecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+
+export type FinanceTransactionStatus = 'planned' | 'paid';
+
+export type FinanceCategoryIconKey =
+  | 'wallet'
+  | 'briefcase'
+  | 'home'
+  | 'zap'
+  | 'droplets'
+  | 'wifi'
+  | 'shield'
+  | 'car'
+  | 'shopping_cart'
+  | 'utensils'
+  | 'heart_pulse'
+  | 'graduation_cap'
+  | 'baby'
+  | 'paw_print'
+  | 'plane'
+  | 'gift'
+  | 'piggy_bank'
+  | 'tv'
+  | 'wrench'
+  | 'credit_card'
+  | 'receipt'
+  | 'tag';
+
+export interface FinanceCategoryConfig extends SyncMetadata {
+  name: string;
+  kind: FinanceKind;
+  colorToken: SectionColorToken | string;
+  icon: FinanceCategoryIconKey | string;
+  sortOrder: number;
+  monthlyBudget: number | null;
+}
+
+export interface FinanceRecurringRule extends SyncMetadata {
+  title: string;
+  kind: 'income' | 'fixed';
+  categoryId: string;
+  amount: number;
+  frequency: FinanceRecurringFrequency;
+  dayOfMonth: number;
+  startMonth: string; // YYYY-MM
+  isActive: boolean;
+  memberId: string | null;
+  notes: string;
+}
+
+export interface FinanceTransaction extends SyncMetadata {
+  title: string;
+  kind: FinanceKind;
+  categoryId: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  month: string; // YYYY-MM
+  status: FinanceTransactionStatus;
+  recurringRuleId: string | null;
+  memberId: string | null;
+  notes: string;
+  photoAttachmentId: string | null;
+  isWarranty: boolean;
+  warrantyExpiresAt: string | null; // YYYY-MM-DD
+  warrantyStore: string;
+  excludeFromTotals: boolean;
+}
+
+export type AppTab =
+  | 'today'
+  | 'stock'
+  | 'meals'
+  | 'recipes'
+  | 'planner'
+  | 'shopping'
+  | 'finances'
+  | 'settings';
