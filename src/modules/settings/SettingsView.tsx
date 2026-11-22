@@ -278,7 +278,7 @@ export function SettingsView({
   onChangeUiDensity,
   onSyncNow,
 }: SettingsViewProps) {
-  const [openSection, setOpenSection] = useState<SettingsSectionId | null>('members');
+  const [openSection, setOpenSection] = useState<SettingsSectionId | null>(null);
   const toggleSection = (id: SettingsSectionId) =>
     setOpenSection((prev) => (prev === id ? null : id));
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);

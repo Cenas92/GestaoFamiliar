@@ -41,6 +41,7 @@ describe('SettingsView household member editing', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /Agregado Familiar/i }));
     expect(screen.getByText('André')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Editar André' }));
@@ -91,6 +92,7 @@ describe('SettingsView household member editing', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /Agregado Familiar/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Editar André' }));
 
     const editForm = screen.getByRole('button', { name: 'Guardar alterações' }).closest('form')!;
@@ -130,9 +132,12 @@ describe('SettingsView household member editing', () => {
     const membersToggle = screen.getByRole('button', { name: /Agregado Familiar/i });
     const aboutToggle = screen.getByRole('button', { name: /Acerca/i });
 
-    expect(membersToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(membersToggle).toHaveAttribute('aria-expanded', 'false');
     expect(aboutToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('AI-Cenas92')).not.toBeInTheDocument();
+
+    fireEvent.click(membersToggle);
+    expect(membersToggle).toHaveAttribute('aria-expanded', 'true');
 
     fireEvent.click(aboutToggle);
 

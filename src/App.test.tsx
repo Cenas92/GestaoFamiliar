@@ -77,7 +77,7 @@ describe('App integration', () => {
     });
   });
 
-  it('switches between Clean and Complete modes from header & Settings and preserves per-tab customization', async () => {
+  it('switches between Clean and Complete modes via Settings (no header toggle) and preserves per-tab customization', async () => {
     window.localStorage.clear();
     render(<App />);
 
@@ -85,18 +85,20 @@ describe('App integration', () => {
       expect(screen.getByRole('heading', { level: 1, name: 'Hoje em Casa' })).toBeInTheDocument();
     });
 
-    // Starts in Clean mode by default
-    const densityToggle = screen.getByRole('button', { name: /Vista Clean ativa/i });
-    expect(densityToggle).toHaveTextContent('Clean');
+    // Starts in Clean mode by default without a top-bar view density toggle
+    expect(screen.queryByRole('button', { name: /Vista Clean ativa/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Alertas Prioritários')).not.toBeInTheDocument();
 
-    // Switch to Complete mode via top bar toggle
-    fireEvent.click(densityToggle);
-
+    // Switch to Complete mode via Settings -> Aspeto e Vista da App
+    fireEvent.click(screen.getByRole('button', { name: /Definições e Família/i }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Vista Completa ativa/i })).toHaveTextContent(
-        'Completa',
-      );
+      expect(screen.getByRole('button', { name: /Aspeto e Vista da App/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Aspeto e Vista da App/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Vista Completa/i }));
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Hoje$/i })[0]);
+    await waitFor(() => {
       expect(screen.getByRole('button', { name: /\+ Produto/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /\+ Receita/i })).toBeInTheDocument();
       expect(screen.getByText('Alertas Prioritários')).toBeInTheDocument();
@@ -148,7 +150,6 @@ describe('App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: /Aspeto e Vista da App/i }));
     fireEvent.click(screen.getByRole('button', { name: /Vista Clean \(predefinida\)/i }));
 
-    expect(screen.getByRole('button', { name: /Vista Clean ativa/i })).toHaveTextContent('Clean');
     fireEvent.click(screen.getAllByRole('button', { name: /^Stock$/i })[0]);
     await waitFor(() => {
       expect(screen.getByText(/produtos em casa/i)).toBeInTheDocument();

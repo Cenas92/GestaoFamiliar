@@ -7,12 +7,10 @@ import {
   Cloud,
   CloudAlert,
   Home,
-  Layers,
   Package,
   RefreshCw,
   Settings,
   ShoppingCart,
-  Sparkles,
   UtensilsCrossed,
   Wallet,
   WifiOff,
@@ -459,39 +457,6 @@ export function App() {
                 </button>
               )
             )}
-
-            <button
-              type="button"
-              onClick={() => handleChangeUiDensity(uiDensity === 'clean' ? 'complete' : 'clean')}
-              aria-pressed={uiDensity === 'complete'}
-              aria-label={
-                uiDensity === 'clean'
-                  ? 'Vista Clean ativa — tocar para mudar para Vista Completa'
-                  : 'Vista Completa ativa — tocar para mudar para Vista Clean'
-              }
-              title={
-                uiDensity === 'clean'
-                  ? 'Vista Clean — tocar para Vista Completa (pré-1.2.0)'
-                  : 'Vista Completa — tocar para Vista Clean'
-              }
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition ${
-                uiDensity === 'complete'
-                  ? 'border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
-                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {uiDensity === 'complete' ? (
-                <>
-                  <Layers className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span>Completa</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
-                  <span>Clean</span>
-                </>
-              )}
-            </button>
 
             <button
               type="button"
