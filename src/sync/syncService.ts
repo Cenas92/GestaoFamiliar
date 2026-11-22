@@ -1,5 +1,6 @@
+import type { Table } from 'dexie';
 import { db } from '../db/database';
-import type { AttachmentRecord } from '../types/domain';
+import type { AttachmentRecord, SyncMetadata } from '../types/domain';
 import { nowIso } from '../utils/id';
 import {
   ATTACHMENTS_FOLDER_NAME,
@@ -99,6 +100,27 @@ export async function buildLocalSnapshot(): Promise<{
   };
 }
 
+function isIncomingNewerLww<T extends SyncMetadata>(local: T | undefined, incoming: T): boolean {
+  if (!local) return true;
+  if (incoming.updatedAt === local.updatedAt) {
+    return incoming.lastModifiedBy > local.lastModifiedBy;
+  }
+  return incoming.updatedAt > local.updatedAt;
+}
+
+async function putNewerRecordsLww<T extends SyncMetadata>(
+  table: Table<T, string>,
+  incoming: T[],
+): Promise<void> {
+  if (incoming.length === 0) return;
+  const existing = await table.toArray();
+  const localMap = new Map(existing.map((r) => [r.id, r]));
+  const toWrite = incoming.filter((rec) => isIncomingNewerLww(localMap.get(rec.id), rec));
+  if (toWrite.length > 0) {
+    await table.bulkPut(toWrite);
+  }
+}
+
 export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Promise<void> {
   const supermarketSections = snapshot.supermarketSections ?? [];
   const financeCategories = snapshot.financeCategories ?? [];
@@ -121,17 +143,17 @@ export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Prom
         db.financeTransactions,
       ],
       async () => {
-        if (snapshot.locations.length) await db.locations.bulkPut(snapshot.locations);
-        if (supermarketSections.length) await db.supermarketSections.bulkPut(supermarketSections);
-        if (snapshot.catalogItems.length) await db.catalogItems.bulkPut(snapshot.catalogItems);
-        if (snapshot.stockLots.length) await db.stockLots.bulkPut(snapshot.stockLots);
-        if (snapshot.recipes.length) await db.recipes.bulkPut(snapshot.recipes);
-        if (snapshot.mealPlan.length) await db.mealPlan.bulkPut(snapshot.mealPlan);
-        if (snapshot.shoppingItems.length) await db.shoppingItems.bulkPut(snapshot.shoppingItems);
-        if (snapshot.members.length) await db.members.bulkPut(snapshot.members);
-        if (financeCategories.length) await db.financeCategories.bulkPut(financeCategories);
-        if (financeRecurring.length) await db.financeRecurring.bulkPut(financeRecurring);
-        if (financeTransactions.length) await db.financeTransactions.bulkPut(financeTransactions);
+        await putNewerRecordsLww(db.locations, snapshot.locations);
+        await putNewerRecordsLww(db.supermarketSections, supermarketSections);
+        await putNewerRecordsLww(db.catalogItems, snapshot.catalogItems);
+        await putNewerRecordsLww(db.stockLots, snapshot.stockLots);
+        await putNewerRecordsLww(db.recipes, snapshot.recipes);
+        await putNewerRecordsLww(db.mealPlan, snapshot.mealPlan);
+        await putNewerRecordsLww(db.shoppingItems, snapshot.shoppingItems);
+        await putNewerRecordsLww(db.members, snapshot.members);
+        await putNewerRecordsLww(db.financeCategories, financeCategories);
+        await putNewerRecordsLww(db.financeRecurring, financeRecurring);
+        await putNewerRecordsLww(db.financeTransactions, financeTransactions);
       },
     );
   });
@@ -317,8 +339,6 @@ async function executeGoogleDriveSync(
     const stateFiles = rootFiles.filter((f) => f.name === STATE_FILE_NAME);
     const primaryStateFile =
       stateFiles.find((f) => f.capabilities?.canEdit !== false) ?? stateFiles[0];
-    const { snapshot: localSnapshot, attachments: localAttachments, deviceId } =
-      await buildLocalSnapshot();
 
     const parsedRemotes: FamilySyncSnapshot[] = [];
     for (const sf of stateFiles) {
@@ -334,6 +354,11 @@ async function executeGoogleDriveSync(
         }
       }
     }
+
+    // Read local state AFTER remote downloads finish so rapid edits made during network I/O
+    // are always included in the merge and never overwritten by a stale pre-download snapshot.
+    const { snapshot: localSnapshot, attachments: localAttachments, deviceId } =
+      await buildLocalSnapshot();
     const remoteSnapshot = combineRemoteSnapshots(parsedRemotes, deviceId);
 
     let finalSnapshot = localSnapshot;

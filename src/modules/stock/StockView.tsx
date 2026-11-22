@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  ShieldAlert,
   ShoppingCart,
   SlidersHorizontal,
   Snowflake,
@@ -75,6 +76,7 @@ interface StockViewProps {
   uiDensity?: UiDensityMode;
   openCreateInitially?: boolean;
   onConsumeCreateInitial?: () => void;
+  onOpenMinStockSettings?: () => void;
 }
 
 type StatusFilter = 'all' | 'expiring' | 'low' | 'leftovers';
@@ -417,6 +419,7 @@ export function StockView({
   uiDensity = 'clean',
   openCreateInitially = false,
   onConsumeCreateInitial,
+  onOpenMinStockSettings,
 }: StockViewProps) {
   const isComplete = uiDensity === 'complete';
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
@@ -862,6 +865,21 @@ export function StockView({
                         {catalogItems.length}
                       </span>
                     </button>
+                    {onOpenMinStockSettings && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onOpenMinStockSettings();
+                        }}
+                        className="flex w-full items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <ShieldAlert className="h-4 w-4 text-teal-700" aria-hidden="true" />
+                          Mínimos e sobrevivência
+                        </span>
+                      </button>
+                    )}
                     {lowStockSummaries.length > 0 && (
                       <button
                         type="button"

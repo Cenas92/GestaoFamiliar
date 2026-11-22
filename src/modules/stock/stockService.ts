@@ -1,9 +1,11 @@
 import type {
+  CatalogCategory,
   CatalogItem,
   PackageUnit,
   QualitativeLevel,
   StockLot,
   StorageLocation,
+  SupermarketSection,
   Unit,
 } from '../../types/domain';
 import { createId, nowIso } from '../../utils/id';
@@ -314,5 +316,191 @@ export function buildNewStockLot(
     isLeftover: params.isLeftover ?? false,
     sourceRecipeId: params.sourceRecipeId ?? null,
     notes: params.notes?.trim() ?? '',
+  };
+}
+
+export interface SurvivalKitPreset {
+  key: string;
+  name: string;
+  matchCatalogId?: string;
+  targetQty: number;
+  unit: Unit;
+  category: CatalogCategory;
+  supermarketSection: SupermarketSection;
+  preferredLocationType: 'pantry' | 'household' | 'pharmacy';
+}
+
+export const SURVIVAL_KIT_PRESETS: SurvivalKitPreset[] = [
+  {
+    key: 'water',
+    name: 'Água engarrafada',
+    targetQty: 18,
+    unit: 'L',
+    category: 'beverages',
+    supermarketSection: 'beverages',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'tuna',
+    name: 'Atum em conserva',
+    matchCatalogId: 'starter-cat-atum-lata',
+    targetQty: 8,
+    unit: 'un',
+    category: 'food',
+    supermarketSection: 'pantry',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'beans',
+    name: 'Feijão / Grão em conserva',
+    matchCatalogId: 'starter-cat-feijao-lata',
+    targetQty: 6,
+    unit: 'un',
+    category: 'food',
+    supermarketSection: 'pantry',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'rice',
+    name: 'Arroz',
+    matchCatalogId: 'starter-cat-arroz',
+    targetQty: 3000,
+    unit: 'g',
+    category: 'food',
+    supermarketSection: 'pantry',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'pasta',
+    name: 'Massa (esparguete / espirais)',
+    matchCatalogId: 'starter-cat-massa',
+    targetQty: 2000,
+    unit: 'g',
+    category: 'food',
+    supermarketSection: 'pantry',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'milk_uht',
+    name: 'Leite',
+    matchCatalogId: 'starter-cat-leite',
+    targetQty: 6,
+    unit: 'L',
+    category: 'beverages',
+    supermarketSection: 'dairy',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'biscuits',
+    name: 'Bolachas / Barras energéticas',
+    targetQty: 4,
+    unit: 'un',
+    category: 'food',
+    supermarketSection: 'pantry',
+    preferredLocationType: 'pantry',
+  },
+  {
+    key: 'batteries',
+    name: 'Pilhas AA / AAA',
+    targetQty: 8,
+    unit: 'un',
+    category: 'cleaning',
+    supermarketSection: 'cleaning',
+    preferredLocationType: 'household',
+  },
+  {
+    key: 'candles',
+    name: 'Velas e isqueiro / fósforos',
+    targetQty: 4,
+    unit: 'un',
+    category: 'cleaning',
+    supermarketSection: 'cleaning',
+    preferredLocationType: 'household',
+  },
+  {
+    key: 'first_aid',
+    name: 'Paracetamol (adulto / xarope)',
+    matchCatalogId: 'starter-cat-paracetamol',
+    targetQty: 2,
+    unit: 'un',
+    category: 'pharmacy',
+    supermarketSection: 'pharmacy',
+    preferredLocationType: 'pharmacy',
+  },
+];
+
+export interface SurvivalItemSummary {
+  catalogItem: CatalogItem;
+  currentQty: number;
+  targetQty: number;
+  missingQty: number;
+  percent: number;
+  isMet: boolean;
+  earliestExpiry: string | null;
+  hasExpired: boolean;
+  hasExpiringSoon: boolean;
+}
+
+export interface SurvivalStockOverview {
+  items: SurvivalItemSummary[];
+  metCount: number;
+  totalCount: number;
+  overallPercent: number;
+  missingItems: SurvivalItemSummary[];
+}
+
+export function summarizeSurvivalStock(
+  catalogItems: CatalogItem[],
+  stockLots: StockLot[],
+  warningDays: number,
+  todayStr = todayDateString(),
+): SurvivalStockOverview {
+  const items: SurvivalItemSummary[] = catalogItems
+    .filter(
+      (cat) =>
+        !cat.deletedAt &&
+        cat.survivalTargetQty !== undefined &&
+        cat.survivalTargetQty !== null &&
+        cat.survivalTargetQty > 0,
+    )
+    .map((cat) => {
+      const targetQty = cat.survivalTargetQty as number;
+      const summary = summarizeCatalogStock(cat, stockLots, warningDays, todayStr);
+      const currentQty =
+        cat.trackingMode === 'qualitative'
+          ? summary.bestQualitativeLevel === 'full'
+            ? targetQty
+            : summary.bestQualitativeLevel === 'low'
+              ? Math.round((targetQty / 2) * 100) / 100
+              : 0
+          : Math.round(summary.totalExactInDefaultUnit * 100) / 100;
+
+      const missingQty = Math.max(0, Math.round((targetQty - currentQty) * 100) / 100);
+      const percent = Math.min(100, Math.round((currentQty / targetQty) * 100));
+      return {
+        catalogItem: cat,
+        currentQty,
+        targetQty,
+        missingQty,
+        percent,
+        isMet: missingQty <= 0,
+        earliestExpiry: summary.earliestExpiry,
+        hasExpired: summary.hasExpired,
+        hasExpiringSoon: summary.hasExpiringSoon,
+      };
+    })
+    .sort((a, b) => a.percent - b.percent || a.catalogItem.name.localeCompare(b.catalogItem.name, 'pt-PT'));
+
+  const totalCount = items.length;
+  const metCount = items.filter((i) => i.isMet).length;
+  const overallPercent =
+    totalCount > 0 ? Math.round(items.reduce((acc, i) => acc + i.percent, 0) / totalCount) : 0;
+
+  return {
+    items,
+    metCount,
+    totalCount,
+    overallPercent,
+    missingItems: items.filter((i) => !i.isMet),
   };
 }

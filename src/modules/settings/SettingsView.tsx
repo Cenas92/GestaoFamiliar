@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   BookOpen,
   Check,
@@ -19,6 +19,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ShieldAlert,
   ShoppingBasket,
   Sparkles,
   Trash2,
@@ -60,6 +61,7 @@ import type {
   LocationColorToken,
   LocationType,
   ShoppingItem,
+  StockLot,
   StorageLocation,
   SupermarketSectionConfig,
 } from '../../types/domain';
@@ -67,6 +69,7 @@ import { createSyncMetadata, nowIso } from '../../utils/id';
 import type { UiDensityMode } from '../../utils/viewPrefs';
 import { CatalogManagerModal } from '../stock/CatalogManagerModal';
 import { FinanceCategoriesEditor } from './FinanceCategoriesEditor';
+import { MinimumAndSurvivalStockEditor } from './MinimumAndSurvivalStockEditor';
 import { SupermarketSectionsEditor } from './SupermarketSectionsEditor';
 
 interface SettingsViewProps {
@@ -75,11 +78,14 @@ interface SettingsViewProps {
   locations: StorageLocation[];
   supermarketSections?: SupermarketSectionConfig[];
   catalogItems?: CatalogItem[];
+  stockLots?: StockLot[];
   shoppingItems?: ShoppingItem[];
   financeCategories?: FinanceCategoryConfig[];
   financeRecurring?: FinanceRecurringRule[];
   financeTransactions?: FinanceTransaction[];
   uiDensity?: UiDensityMode;
+  initialOpenSection?: SettingsSectionId | null;
+  onConsumeInitialSection?: () => void;
   onChangeUiDensity?: (mode: UiDensityMode) => void;
   onSyncNow: () => Promise<string>;
 }
@@ -208,10 +214,11 @@ function MemberFormFields({
   );
 }
 
-type SettingsSectionId =
+export type SettingsSectionId =
   | 'interface'
   | 'members'
   | 'locations'
+  | 'min_stock'
   | 'sections'
   | 'finance_categories'
   | 'catalog'
@@ -270,15 +277,24 @@ export function SettingsView({
   locations,
   supermarketSections = [],
   catalogItems = [],
+  stockLots = [],
   shoppingItems = [],
   financeCategories = [],
   financeRecurring = [],
   financeTransactions = [],
   uiDensity = 'clean',
+  initialOpenSection = null,
+  onConsumeInitialSection,
   onChangeUiDensity,
   onSyncNow,
 }: SettingsViewProps) {
-  const [openSection, setOpenSection] = useState<SettingsSectionId | null>(null);
+  const [openSection, setOpenSection] = useState<SettingsSectionId | null>(initialOpenSection);
+  useEffect(() => {
+    if (initialOpenSection) {
+      setOpenSection(initialOpenSection);
+      onConsumeInitialSection?.();
+    }
+  }, [initialOpenSection, onConsumeInitialSection]);
   const toggleSection = (id: SettingsSectionId) =>
     setOpenSection((prev) => (prev === id ? null : id));
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
@@ -841,6 +857,33 @@ export function SettingsView({
             </button>
           </div>
         </form>
+      </AccordionSection>
+
+      {/* Minimum Stock & Survival Reserve */}
+      <AccordionSection
+        title="Stocks Mínimos e Sobrevivência"
+        icon={<ShieldAlert className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${
+          catalogItems.filter(
+            (c) =>
+              (c.minStockQty !== null && c.minStockQty > 0) ||
+              (c.survivalTargetQty !== undefined &&
+                c.survivalTargetQty !== null &&
+                c.survivalTargetQty > 0),
+          ).length
+        }`}
+        isOpen={openSection === 'min_stock'}
+        onToggle={() => toggleSection('min_stock')}
+      >
+        <MinimumAndSurvivalStockEditor
+          catalogItems={catalogItems}
+          stockLots={stockLots}
+          locations={locations}
+          shoppingItems={shoppingItems}
+          expiryWarningDays={settings.expiryWarningDays}
+          deviceId={settings.deviceId}
+          onNotify={(msg) => setStatusMsg(msg)}
+        />
       </AccordionSection>
 
       {/* Supermarket Sections / Aisles */}

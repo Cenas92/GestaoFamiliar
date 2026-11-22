@@ -126,6 +126,7 @@ export interface CatalogItem extends SyncMetadata {
   defaultPackageUnit?: PackageUnit | null;
   defaultLocationId: string;
   minStockQty: number | null;
+  survivalTargetQty?: number | null;
   supermarketSection: SupermarketSection;
 }
 

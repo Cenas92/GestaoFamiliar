@@ -29,7 +29,7 @@ import { formatEur } from './modules/finances/financeVisuals';
 import { PlannerView } from './modules/planner/PlannerView';
 import { evaluateRecipeMatch } from './modules/recipes/matchingEngine';
 import { RecipesView } from './modules/recipes/RecipesView';
-import { SettingsView } from './modules/settings/SettingsView';
+import { SettingsView, type SettingsSectionId } from './modules/settings/SettingsView';
 import { ShoppingView } from './modules/shopping/ShoppingView';
 import { summarizeCatalogStock } from './modules/stock/stockService';
 import { StockView } from './modules/stock/StockView';
@@ -79,6 +79,9 @@ export function App() {
   const [uiDensity, setUiDensity] = useState<UiDensityMode>(() => loadUiDensityMode());
   const [openStockCreate, setOpenStockCreate] = useState(false);
   const [openRecipeCreate, setOpenRecipeCreate] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | null>(
+    null,
+  );
   const [plannerWeekStart, setPlannerWeekStart] = useState(() => getWeekStartMonday());
   const [financeMonth, setFinanceMonth] = useState(() => currentMonthString());
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -573,6 +576,10 @@ export function App() {
             uiDensity={uiDensity}
             openCreateInitially={openStockCreate}
             onConsumeCreateInitial={() => setOpenStockCreate(false)}
+            onOpenMinStockSettings={() => {
+              setSettingsInitialSection('min_stock');
+              navigate('settings');
+            }}
           />
         )}
 
@@ -680,11 +687,14 @@ export function App() {
             locations={data.locations}
             supermarketSections={data.supermarketSections}
             catalogItems={data.catalogItems}
+            stockLots={data.stockLots}
             shoppingItems={data.shoppingItems}
             financeCategories={data.financeCategories}
             financeRecurring={data.financeRecurring}
             financeTransactions={data.financeTransactions}
             uiDensity={uiDensity}
+            initialOpenSection={settingsInitialSection}
+            onConsumeInitialSection={() => setSettingsInitialSection(null)}
             onChangeUiDensity={handleChangeUiDensity}
             onSyncNow={handleSyncNow}
           />

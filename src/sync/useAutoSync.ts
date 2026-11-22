@@ -57,6 +57,8 @@ export function useAutoSync(settings: AppSettings | undefined) {
   settingsRef.current = settings;
   const lastAutoAttemptRef = useRef(0);
   const debounceTimerRef = useRef<number | null>(null);
+  const editRevisionRef = useRef(0);
+  const isSyncingRef = useRef(false);
 
   const isConfigured = Boolean(
     settings?.googleClientId?.trim() && settings?.googleDriveFolderId,
@@ -73,6 +75,7 @@ export function useAutoSync(settings: AppSettings | undefined) {
     const current = settingsRef.current;
     if (!current?.googleClientId?.trim() || !current.googleDriveFolderId) return;
     if (!navigator.onLine) return;
+    if (isSyncingRef.current) return;
 
     const everLinked =
       Boolean(current.lastSyncAt) ||
@@ -87,6 +90,8 @@ export function useAutoSync(settings: AppSettings | undefined) {
       markGoogleSyncLinked();
     }
 
+    const startRevision = editRevisionRef.current;
+    isSyncingRef.current = true;
     lastAutoAttemptRef.current = Date.now();
     setPhase('syncing');
 
@@ -96,8 +101,20 @@ export function useAutoSync(settings: AppSettings | undefined) {
         googleDriveFolderId: current.googleDriveFolderId,
       });
       markGoogleSyncLinked();
-      setHasPendingLocalEdits(false);
-      setPhase('ok');
+      if (editRevisionRef.current === startRevision) {
+        setHasPendingLocalEdits(false);
+        setPhase('ok');
+      } else {
+        // New local edits happened while this sync was in flight — schedule a follow-up sync
+        setHasPendingLocalEdits(true);
+        if (debounceTimerRef.current !== null) {
+          window.clearTimeout(debounceTimerRef.current);
+        }
+        debounceTimerRef.current = window.setTimeout(() => {
+          debounceTimerRef.current = null;
+          void executeBackgroundSync();
+        }, EDIT_DEBOUNCE_MS);
+      }
       if (
         res.addedFromRemote > 0 ||
         res.updatedFromRemote > 0 ||
@@ -113,6 +130,8 @@ export function useAutoSync(settings: AppSettings | undefined) {
         setPhase('error');
         setMessage(err instanceof Error ? err.message : 'Erro ao sincronizar.');
       }
+    } finally {
+      isSyncingRef.current = false;
     }
   }, []);
 
@@ -138,6 +157,7 @@ export function useAutoSync(settings: AppSettings | undefined) {
       const current = settingsRef.current;
       if (!current?.initialized) return;
 
+      editRevisionRef.current += 1;
       setHasPendingLocalEdits(true);
       if (!current.googleClientId?.trim() || !current.googleDriveFolderId) return;
 
@@ -221,6 +241,7 @@ export function useAutoSync(settings: AppSettings | undefined) {
       throw new Error('Base de dados não inicializada.');
     }
 
+    const startRevision = editRevisionRef.current;
     setPhase('syncing');
     setMessage(null);
     try {
@@ -229,7 +250,11 @@ export function useAutoSync(settings: AppSettings | undefined) {
         googleDriveFolderId: current.googleDriveFolderId,
       });
       markGoogleSyncLinked();
-      setHasPendingLocalEdits(false);
+      if (editRevisionRef.current === startRevision) {
+        setHasPendingLocalEdits(false);
+      } else {
+        setHasPendingLocalEdits(true);
+      }
       const summary = formatSyncSummary(res);
       setPhase('ok');
       setMessage(summary);
