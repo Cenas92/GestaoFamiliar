@@ -47,6 +47,7 @@ export async function buildLocalSnapshot(): Promise<{
     mealPlan,
     shoppingItems,
     members,
+    financeAccounts,
     financeCategories,
     financeRecurring,
     financeTransactions,
@@ -61,6 +62,7 @@ export async function buildLocalSnapshot(): Promise<{
     db.mealPlan.toArray(),
     db.shoppingItems.toArray(),
     db.members.toArray(),
+    db.financeAccounts.toArray(),
     db.financeCategories.toArray(),
     db.financeRecurring.toArray(),
     db.financeTransactions.toArray(),
@@ -84,6 +86,7 @@ export async function buildLocalSnapshot(): Promise<{
       mealPlan,
       shoppingItems,
       members,
+      financeAccounts,
       financeCategories,
       financeRecurring,
       financeTransactions,
@@ -123,6 +126,7 @@ async function putNewerRecordsLww<T extends SyncMetadata>(
 
 export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Promise<void> {
   const supermarketSections = snapshot.supermarketSections ?? [];
+  const financeAccounts = snapshot.financeAccounts ?? [];
   const financeCategories = snapshot.financeCategories ?? [];
   const financeRecurring = snapshot.financeRecurring ?? [];
   const financeTransactions = snapshot.financeTransactions ?? [];
@@ -138,6 +142,7 @@ export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Prom
         db.mealPlan,
         db.shoppingItems,
         db.members,
+        db.financeAccounts,
         db.financeCategories,
         db.financeRecurring,
         db.financeTransactions,
@@ -151,6 +156,7 @@ export async function applySnapshotToLocalDb(snapshot: FamilySyncSnapshot): Prom
         await putNewerRecordsLww(db.mealPlan, snapshot.mealPlan);
         await putNewerRecordsLww(db.shoppingItems, snapshot.shoppingItems);
         await putNewerRecordsLww(db.members, snapshot.members);
+        await putNewerRecordsLww(db.financeAccounts, financeAccounts);
         await putNewerRecordsLww(db.financeCategories, financeCategories);
         await putNewerRecordsLww(db.financeRecurring, financeRecurring);
         await putNewerRecordsLww(db.financeTransactions, financeTransactions);

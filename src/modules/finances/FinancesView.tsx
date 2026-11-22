@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   AlertTriangle,
+  ArrowLeftRight,
   BarChart3,
   CalendarClock,
   Camera,
@@ -8,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Landmark,
   Paperclip,
   PieChart,
   Plus,
@@ -20,15 +22,20 @@ import {
 import { AttachmentImage } from '../../components/AttachmentPreview';
 import { SearchInput } from '../../components/SearchInput';
 import { TypeIconBadge } from '../../components/TypeIconBadge';
+import { DEFAULT_JOINT_ACCOUNT_ID } from '../../data/starterCatalog';
+import { db } from '../../db/database';
 import type {
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceKind,
   FinanceRecurringRule,
+  FinanceSplitMode,
   FinanceTransaction,
   FinanceTransactionStatus,
   HouseholdMember,
 } from '../../types/domain';
 import { saveImageAttachment } from '../../utils/attachmentStorage';
+import { nowIso } from '../../utils/id';
 import { getSectionColorStyle } from '../../utils/sectionVisuals';
 import { formatDatePt, todayDateString } from '../../utils/units';
 import {
@@ -45,6 +52,8 @@ import {
   buildCategoryBudgetProgress,
   buildMonthlyFinanceHistory,
   buildRecurringInstanceId,
+  calculateJointAccountSettlement,
+  computeAccountAccumulatedBalance,
   currentMonthString,
   ensureRecurringTransactionsForMonth,
   formatMonthLabelPt,
@@ -52,15 +61,19 @@ import {
   getNextDueMonthForRule,
   getWarrantyStatus,
   isRecurringRuleDueInMonth,
+  resolveTransactionAccountId,
+  saveFinanceTransaction,
   shiftMonth,
   summarizeMonthFinances,
   toggleFinanceTransactionPaid,
+  type JointSettlementParticipant,
   type WarrantyStatus,
 } from './financeService';
 import { FinanceTransactionModal } from './FinanceTransactionModal';
 import {
   FINANCE_FREQUENCY_LABELS,
   FINANCE_KIND_LABELS,
+  FINANCE_SPLIT_MODE_LABELS,
   formatEur,
   formatSignedEur,
   getFinanceCategoryVisual,
@@ -72,6 +85,7 @@ type FinanceSortMode = 'date_desc' | 'amount_desc' | 'title_asc';
 const VALID_FINANCE_SORTS: readonly FinanceSortMode[] = ['date_desc', 'amount_desc', 'title_asc'];
 
 interface FinancesViewProps {
+  accounts?: FinanceAccount[];
   categories: FinanceCategoryConfig[];
   recurringRules: FinanceRecurringRule[];
   transactions: FinanceTransaction[];
@@ -80,9 +94,11 @@ interface FinancesViewProps {
   uiDensity?: UiDensityMode;
   activeMonth: string;
   onActiveMonthChange: (month: string) => void;
+  onOpenAccountsSettings?: () => void;
 }
 
 export function FinancesView({
+  accounts = [],
   categories,
   recurringRules,
   transactions,
@@ -91,12 +107,25 @@ export function FinancesView({
   uiDensity = 'clean',
   activeMonth,
   onActiveMonthChange,
+  onOpenAccountsSettings,
 }: FinancesViewProps) {
   const isComplete = uiDensity === 'complete';
   const today = todayDateString();
   const thisMonth = currentMonthString(today);
 
+  const activeAccounts = useMemo(
+    () => accounts.filter((a) => !a.deletedAt && !a.isArchived),
+    [accounts],
+  );
+  const hasMultipleAccounts = activeAccounts.length >= 2;
+  const jointAccount = useMemo(
+    () => activeAccounts.find((a) => a.accountType === 'joint') ?? activeAccounts[0] ?? null,
+    [activeAccounts],
+  );
+  const defaultAccountId = jointAccount?.id ?? DEFAULT_JOINT_ACCOUNT_ID;
+
   const [subTab, setSubTab] = useState<FinanceSubTab>('transactions');
+  const [accountFilter, setAccountFilter] = useState<string | 'all'>('all');
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<FinanceKind | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -171,6 +200,10 @@ export function FinancesView({
     () => new Map(categories.map((c) => [c.id, c])),
     [categories],
   );
+  const accountsById = useMemo(
+    () => new Map(activeAccounts.map((a) => [a.id, a])),
+    [activeAccounts],
+  );
   const membersById = useMemo(
     () => new Map(members.map((m) => [m.id, m])),
     [members],
@@ -180,10 +213,39 @@ export function FinancesView({
     [transactions],
   );
 
+  const selectedAccount =
+    accountFilter !== 'all' ? (accountsById.get(accountFilter) ?? null) : null;
+
   const monthSummary = useMemo(
-    () => summarizeMonthFinances(activeMonth, transactions, categories),
-    [activeMonth, transactions, categories],
+    () =>
+      summarizeMonthFinances(
+        activeMonth,
+        transactions,
+        categories,
+        accountFilter,
+        defaultAccountId,
+      ),
+    [activeMonth, transactions, categories, accountFilter, defaultAccountId],
   );
+
+  const selectedAccountAccumulatedBalance = useMemo(
+    () =>
+      selectedAccount
+        ? computeAccountAccumulatedBalance(selectedAccount, transactions, defaultAccountId)
+        : null,
+    [selectedAccount, transactions, defaultAccountId],
+  );
+
+  const jointSettlement = useMemo(() => {
+    if (!jointAccount || !hasMultipleAccounts) return null;
+    return calculateJointAccountSettlement(
+      activeMonth,
+      jointAccount,
+      activeAccounts,
+      transactions,
+      members,
+    );
+  }, [jointAccount, hasMultipleAccounts, activeMonth, activeAccounts, transactions, members]);
 
   const budgetProgress = useMemo(
     () => buildCategoryBudgetProgress(activeMonth, transactions, categories),
@@ -201,8 +263,16 @@ export function FinancesView({
   );
 
   const monthTransactions = useMemo(() => {
-    return transactions.filter((t) => !t.excludeFromTotals && t.month === activeMonth);
-  }, [transactions, activeMonth]);
+    return transactions.filter((t) => {
+      if (t.excludeFromTotals || t.month !== activeMonth) return false;
+      if (accountFilter === 'all') return true;
+      const txAcc = resolveTransactionAccountId(t, defaultAccountId);
+      if (t.kind === 'transfer') {
+        return txAcc === accountFilter || t.toAccountId === accountFilter;
+      }
+      return txAcc === accountFilter;
+    });
+  }, [transactions, activeMonth, accountFilter, defaultAccountId]);
 
   const filteredTransactions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -356,9 +426,48 @@ export function FinancesView({
       updated.status === 'paid'
         ? updated.kind === 'income'
           ? 'Marcado como recebido.'
-          : 'Marcado como pago.'
+          : updated.kind === 'transfer'
+            ? 'Transferência concluída.'
+            : 'Marcado como pago.'
         : 'Voltou a «Previsto».',
     );
+  };
+
+  const handleRegisterSettlementTransfer = async (p: JointSettlementParticipant) => {
+    if (!jointSettlement || p.direction === 'settled' || p.amountToTransfer <= 0) return;
+    const fromAcc =
+      p.direction === 'to_joint' ? p.account : jointSettlement.jointAccount;
+    const toAcc =
+      p.direction === 'to_joint' ? jointSettlement.jointAccount : p.account;
+    const txDate = today.startsWith(activeMonth) ? today : `${activeMonth}-01`;
+
+    await saveFinanceTransaction(
+      {
+        title: `Acerto ${p.displayName} (${fromAcc.name} → ${toAcc.name})`,
+        kind: 'transfer',
+        categoryId: '',
+        accountId: fromAcc.id,
+        toAccountId: toAcc.id,
+        amount: p.amountToTransfer,
+        date: txDate,
+        status: 'paid',
+        memberId: p.member?.id ?? null,
+        notes: `Acerto mensal ${formatMonthShortPt(activeMonth)}`,
+      },
+      deviceId,
+    );
+    showToast(`Transferência de ${formatEur(p.amountToTransfer)} registada!`);
+  };
+
+  const handleChangeSplitMode = async (mode: FinanceSplitMode) => {
+    if (!jointAccount) return;
+    await db.financeAccounts.put({
+      ...jointAccount,
+      splitMode: mode,
+      updatedAt: nowIso(),
+      lastModifiedBy: deviceId,
+    });
+    showToast(`Divisão da Conta Conjunta: ${FINANCE_SPLIT_MODE_LABELS[mode]}.`);
   };
 
   const expenseRatio =
@@ -475,9 +584,70 @@ export function FinancesView({
         </div>
       </div>
 
+      {/* Pills rápidas por conta (quando existem 2+ contas) */}
+      {subTab !== 'warranties' && hasMultipleAccounts && (
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          <button
+            type="button"
+            onClick={() => setAccountFilter('all')}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition ${
+              accountFilter === 'all'
+                ? 'bg-teal-700 text-white shadow-2xs'
+                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <Landmark className="h-3 w-3" aria-hidden="true" />
+            <span>Todas</span>
+          </button>
+          {activeAccounts.map((acc) => {
+            const active = accountFilter === acc.id;
+            const color = getSectionColorStyle(acc.colorToken);
+            return (
+              <button
+                key={acc.id}
+                type="button"
+                onClick={() => setAccountFilter(acc.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  active
+                    ? 'bg-teal-700 text-white shadow-2xs'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${active ? 'bg-white' : color.swatchClass}`}
+                  aria-hidden="true"
+                />
+                <span>{acc.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Cartão Resumo do Mês */}
       {subTab !== 'warranties' && (
         <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs">
+          {selectedAccount && (
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 font-bold text-slate-800">
+                <Landmark className="h-3.5 w-3.5 text-teal-700" aria-hidden="true" />
+                {selectedAccount.name}
+              </span>
+              {selectedAccountAccumulatedBalance !== null && (
+                <span className="text-[11px] text-slate-500">
+                  Saldo atual:{' '}
+                  <strong
+                    className={`font-bold tabular-nums ${
+                      selectedAccountAccumulatedBalance >= 0 ? 'text-teal-800' : 'text-rose-700'
+                    }`}
+                  >
+                    {formatEur(selectedAccountAccumulatedBalance)}
+                  </strong>
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-2 text-center sm:text-left">
             <div>
               <p className="text-[11px] font-medium text-slate-500">Entradas</p>
@@ -492,7 +662,9 @@ export function FinancesView({
               </p>
             </div>
             <div>
-              <p className="text-[11px] font-medium text-slate-500">Saldo</p>
+              <p className="text-[11px] font-medium text-slate-500">
+                {selectedAccount ? 'Fluxo mês' : 'Saldo'}
+              </p>
               <p
                 className={`mt-0.5 text-sm font-bold sm:text-base ${
                   monthSummary.balanceTotal >= 0 ? 'text-teal-800' : 'text-rose-700'
@@ -502,6 +674,21 @@ export function FinancesView({
               </p>
             </div>
           </div>
+
+          {selectedAccount && (monthSummary.transfersIn > 0 || monthSummary.transfersOut > 0) && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-indigo-700">
+              <span className="inline-flex items-center gap-1 font-semibold">
+                <ArrowLeftRight className="h-3 w-3" aria-hidden="true" />
+                Transferências:
+              </span>
+              {monthSummary.transfersIn > 0 && (
+                <span>+{formatEur(monthSummary.transfersIn)} recebidas</span>
+              )}
+              {monthSummary.transfersOut > 0 && (
+                <span>−{formatEur(monthSummary.transfersOut)} enviadas</span>
+              )}
+            </div>
+          )}
 
           {/* Barra proporcional limpa */}
           {(monthSummary.incomeTotal > 0 || monthSummary.expensesTotal > 0) && (
@@ -684,6 +871,7 @@ export function FinancesView({
                   <option value="variable">Despesas variáveis</option>
                   <option value="fixed">Despesas fixas</option>
                   <option value="income">Receitas</option>
+                  {hasMultipleAccounts && <option value="transfer">Transferências</option>}
                 </select>
 
                 <select
@@ -795,10 +983,26 @@ export function FinancesView({
           ) : prefs.viewMode === 'line' ? (
             <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
               {filteredTransactions.map((tx) => {
+                const isTransfer = tx.kind === 'transfer';
                 const cat = categoriesById.get(tx.categoryId);
-                const visual = getFinanceCategoryVisual(cat);
+                const visual = isTransfer
+                  ? {
+                      Icon: ArrowLeftRight,
+                      bgClass: 'bg-indigo-100',
+                      textClass: 'text-indigo-700',
+                      label: 'Transferência',
+                    }
+                  : getFinanceCategoryVisual(cat);
                 const member = tx.memberId ? membersById.get(tx.memberId) : null;
+                const fromAcc = accountsById.get(resolveTransactionAccountId(tx, defaultAccountId));
+                const toAcc = tx.toAccountId ? accountsById.get(tx.toAccountId) : null;
                 const isPaid = tx.status === 'paid';
+                const amountText =
+                  isTransfer && selectedAccount
+                    ? tx.toAccountId === selectedAccount.id
+                      ? `+${formatEur(tx.amount)}`
+                      : `−${formatEur(tx.amount)}`
+                    : formatSignedEur(tx.amount, tx.kind);
 
                 return (
                   <div
@@ -838,8 +1042,13 @@ export function FinancesView({
                           )}
                         </div>
                         <p className="truncate text-[11px] text-slate-500">
-                          {cat?.name ?? 'Sem categoria'} · {formatDatePt(tx.date)}
-                          {member ? ` · ${member.name}` : ''}
+                          {isTransfer
+                            ? `${fromAcc?.name ?? 'Conta'} → ${toAcc?.name ?? 'Conta'} · ${formatDatePt(tx.date)}`
+                            : `${cat?.name ?? 'Sem categoria'} · ${formatDatePt(tx.date)}${
+                                hasMultipleAccounts && !selectedAccount && fromAcc
+                                  ? ` · ${fromAcc.name}`
+                                  : ''
+                              }${member ? ` · ${member.name}` : ''}`}
                         </p>
                       </div>
                     </button>
@@ -849,14 +1058,16 @@ export function FinancesView({
                         type="button"
                         onClick={() => openEditTransaction(tx)}
                         className={`text-right text-sm font-bold tabular-nums ${
-                          tx.kind === 'income'
-                            ? 'text-emerald-700'
-                            : isPaid
-                              ? 'text-slate-900'
-                              : 'text-slate-500'
+                          isTransfer
+                            ? 'text-indigo-700'
+                            : tx.kind === 'income'
+                              ? 'text-emerald-700'
+                              : isPaid
+                                ? 'text-slate-900'
+                                : 'text-slate-500'
                         }`}
                       >
-                        {formatSignedEur(tx.amount, tx.kind)}
+                        {amountText}
                       </button>
 
                       <button
@@ -1183,6 +1394,108 @@ export function FinancesView({
               <p className="mt-0.5 text-[10px] text-slate-400">Saldo sobre entradas</p>
             </div>
           </div>
+
+          {/* Acerto Mensal da Conta Conjunta (quando há Conta Conjunta + Contas Pessoais) */}
+          {jointSettlement && (
+            <section className="rounded-2xl border border-indigo-200/80 bg-white p-3.5 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h2 className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-indigo-900">
+                    <ArrowLeftRight className="h-3.5 w-3.5 text-indigo-600" aria-hidden="true" />
+                    <span>Acerto · {jointSettlement.jointAccount.name}</span>
+                  </h2>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Despesas comuns no mês:{' '}
+                    <strong className="text-slate-800">
+                      {formatEur(jointSettlement.jointExpensesTotal)}
+                    </strong>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={jointSettlement.splitMode}
+                    onChange={(e) =>
+                      void handleChangeSplitMode(e.target.value as FinanceSplitMode)
+                    }
+                    aria-label="Modo de divisão da conta conjunta"
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700"
+                  >
+                    <option value="equal">50% / 50%</option>
+                    <option value="proportional">Proporcional</option>
+                    <option value="fixed">Quota fixa</option>
+                  </select>
+                  {onOpenAccountsSettings && (
+                    <button
+                      type="button"
+                      onClick={onOpenAccountsSettings}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-50"
+                    >
+                      Contas
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/50">
+                {jointSettlement.participants.map((p) => (
+                  <div
+                    key={p.account.id}
+                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-bold text-slate-900">
+                        {p.displayName}{' '}
+                        <span className="font-normal text-slate-500">
+                          (Quota: {formatEur(p.targetShare)} · {p.sharePercent}%)
+                        </span>
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {p.directDepositsToJoint > 0
+                          ? `Entrou na Conjunta: ${formatEur(p.directDepositsToJoint)}`
+                          : 'Ordenado fora da Conjunta'}
+                        {p.alreadyTransferredNet !== 0
+                          ? ` · Transf.: ${p.alreadyTransferredNet > 0 ? '+' : ''}${formatEur(p.alreadyTransferredNet)}`
+                          : ''}
+                      </p>
+                    </div>
+
+                    {p.direction === 'settled' ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                        <Check className="h-3 w-3" aria-hidden="true" />
+                        Acertado
+                      </span>
+                    ) : (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="text-right">
+                          <p
+                            className={`text-xs font-bold tabular-nums ${
+                              p.direction === 'to_joint' ? 'text-amber-800' : 'text-teal-800'
+                            }`}
+                          >
+                            {formatEur(p.amountToTransfer)}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {p.direction === 'to_joint'
+                              ? `${p.account.name} → Conjunta`
+                              : `Conjunta → ${p.account.name}`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleRegisterSettlementTransfer(p)}
+                          aria-label={`Registar transferência de acerto de ${p.displayName}`}
+                          className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700"
+                        >
+                          Registar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Orçamentos mensais por categoria */}
           <section className="rounded-2xl border border-slate-200 bg-white p-3.5">
@@ -1625,6 +1938,8 @@ export function FinancesView({
         onClose={() => setTxModalOpen(false)}
         editingTransaction={editingTx}
         activeMonth={activeMonth}
+        accounts={activeAccounts}
+        defaultAccountId={selectedAccount?.id ?? defaultAccountId}
         categories={categories}
         members={members}
         deviceId={deviceId}
@@ -1639,6 +1954,8 @@ export function FinancesView({
         onClose={() => setRecurringModalOpen(false)}
         editingRule={editingRule}
         activeMonth={activeMonth}
+        accounts={activeAccounts}
+        defaultAccountId={selectedAccount?.id ?? defaultAccountId}
         categories={categories}
         members={members}
         deviceId={deviceId}

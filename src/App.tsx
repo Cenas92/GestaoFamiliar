@@ -669,6 +669,7 @@ export function App() {
 
         {activeTab === 'finances' && (
           <FinancesView
+            accounts={data.financeAccounts}
             categories={data.financeCategories}
             recurringRules={data.financeRecurring}
             transactions={data.financeTransactions}
@@ -677,6 +678,10 @@ export function App() {
             uiDensity={uiDensity}
             activeMonth={financeMonth}
             onActiveMonthChange={setFinanceMonth}
+            onOpenAccountsSettings={() => {
+              setSettingsInitialSection('finance_accounts');
+              navigate('settings');
+            }}
           />
         )}
 
@@ -689,6 +694,7 @@ export function App() {
             catalogItems={data.catalogItems}
             stockLots={data.stockLots}
             shoppingItems={data.shoppingItems}
+            financeAccounts={data.financeAccounts}
             financeCategories={data.financeCategories}
             financeRecurring={data.financeRecurring}
             financeTransactions={data.financeTransactions}

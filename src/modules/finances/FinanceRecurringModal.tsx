@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal } from '../../components/Modal';
+import { DEFAULT_JOINT_ACCOUNT_ID } from '../../data/starterCatalog';
 import type {
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceRecurringFrequency,
   FinanceRecurringRule,
@@ -15,6 +17,8 @@ interface FinanceRecurringModalProps {
   onClose: () => void;
   editingRule: FinanceRecurringRule | null;
   activeMonth: string;
+  accounts?: FinanceAccount[];
+  defaultAccountId?: string;
   categories: FinanceCategoryConfig[];
   members: HouseholdMember[];
   deviceId: string;
@@ -37,16 +41,27 @@ export function FinanceRecurringModal({
   onClose,
   editingRule,
   activeMonth,
+  accounts = [],
+  defaultAccountId,
   categories,
   members,
   deviceId,
   initialKind = 'fixed',
   onSaved,
 }: FinanceRecurringModalProps) {
+  const activeAccounts = useMemo(
+    () => accounts.filter((a) => !a.deletedAt && !a.isArchived),
+    [accounts],
+  );
+  const hasMultipleAccounts = activeAccounts.length >= 2;
+  const fallbackAccountId =
+    defaultAccountId || activeAccounts[0]?.id || DEFAULT_JOINT_ACCOUNT_ID;
+
   const [kind, setKind] = useState<'income' | 'fixed'>(initialKind);
   const [title, setTitle] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [accountId, setAccountId] = useState(fallbackAccountId);
   const [frequency, setFrequency] = useState<FinanceRecurringFrequency>('monthly');
   const [dayOfMonth, setDayOfMonth] = useState('1');
   const [startMonth, setStartMonth] = useState(activeMonth);
@@ -67,6 +82,7 @@ export function FinanceRecurringModal({
       setTitle(editingRule.title);
       setAmountInput(String(editingRule.amount).replace('.', ','));
       setCategoryId(editingRule.categoryId);
+      setAccountId(editingRule.accountId || fallbackAccountId);
       setFrequency(editingRule.frequency);
       setDayOfMonth(String(editingRule.dayOfMonth));
       setStartMonth(editingRule.startMonth);
@@ -80,6 +96,7 @@ export function FinanceRecurringModal({
     setTitle('');
     setAmountInput('');
     setCategoryId(pickRecurringCategory(categories, initialKind));
+    setAccountId(fallbackAccountId);
     setFrequency('monthly');
     setDayOfMonth(initialKind === 'income' ? '25' : '1');
     setStartMonth(activeMonth);
@@ -127,6 +144,7 @@ export function FinanceRecurringModal({
           title: trimmedTitle,
           kind,
           categoryId: categoryId || pickRecurringCategory(categories, kind),
+          accountId: accountId || fallbackAccountId,
           amount: parsedAmount,
           frequency,
           dayOfMonth: parsedDay,
@@ -223,8 +241,8 @@ export function FinanceRecurringModal({
           </div>
         </div>
 
-        {/* Categoria e Periodicidade */}
-        <div className="grid gap-2.5 sm:grid-cols-2">
+        {/* Categoria, Conta e Periodicidade */}
+        <div className={`grid gap-2.5 ${hasMultipleAccounts ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-700">Categoria</label>
             <select
@@ -239,6 +257,24 @@ export function FinanceRecurringModal({
               ))}
             </select>
           </div>
+
+          {hasMultipleAccounts && (
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">Conta</label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                aria-label="Conta da recorrência"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+              >
+                {activeAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-700">Periodicidade</label>

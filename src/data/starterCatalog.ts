@@ -1,6 +1,7 @@
 import type {
   CatalogCategory,
   CatalogItem,
+  FinanceAccount,
   FinanceCategoryConfig,
   LocationColorToken,
   LocationType,
@@ -246,6 +247,29 @@ export function buildStarterSupermarketSections(deviceId: string): SupermarketSe
     deletedAt: null,
     lastModifiedBy: deviceId,
   }));
+}
+
+export const DEFAULT_JOINT_ACCOUNT_ID = 'fin-acc-joint';
+
+export function buildStarterFinanceAccounts(deviceId: string): FinanceAccount[] {
+  return [
+    {
+      id: DEFAULT_JOINT_ACCOUNT_ID,
+      name: 'Conta Conjunta',
+      accountType: 'joint',
+      memberId: null,
+      colorToken: 'teal',
+      initialBalance: null,
+      splitMode: 'equal',
+      fixedQuota: null,
+      sortOrder: 1,
+      isArchived: false,
+      createdAt: SEED_TIMESTAMP,
+      updatedAt: SEED_TIMESTAMP,
+      deletedAt: null,
+      lastModifiedBy: deviceId,
+    },
+  ];
 }
 
 export function buildStarterFinanceCategories(deviceId: string): FinanceCategoryConfig[] {

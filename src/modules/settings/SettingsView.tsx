@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Info,
   KeyRound,
+  Landmark,
   Layers,
   MapPin,
   Pencil,
@@ -53,6 +54,7 @@ import { clearGoogleSyncLinked, markGoogleSyncLinked } from '../../sync/useAutoS
 import type {
   AppSettings,
   CatalogItem,
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceRecurringRule,
   FinanceTransaction,
@@ -68,6 +70,7 @@ import type {
 import { createSyncMetadata, nowIso } from '../../utils/id';
 import type { UiDensityMode } from '../../utils/viewPrefs';
 import { CatalogManagerModal } from '../stock/CatalogManagerModal';
+import { FinanceAccountsEditor } from './FinanceAccountsEditor';
 import { FinanceCategoriesEditor } from './FinanceCategoriesEditor';
 import { MinimumAndSurvivalStockEditor } from './MinimumAndSurvivalStockEditor';
 import { SupermarketSectionsEditor } from './SupermarketSectionsEditor';
@@ -80,6 +83,7 @@ interface SettingsViewProps {
   catalogItems?: CatalogItem[];
   stockLots?: StockLot[];
   shoppingItems?: ShoppingItem[];
+  financeAccounts?: FinanceAccount[];
   financeCategories?: FinanceCategoryConfig[];
   financeRecurring?: FinanceRecurringRule[];
   financeTransactions?: FinanceTransaction[];
@@ -220,6 +224,7 @@ export type SettingsSectionId =
   | 'locations'
   | 'min_stock'
   | 'sections'
+  | 'finance_accounts'
   | 'finance_categories'
   | 'catalog'
   | 'sync'
@@ -279,6 +284,7 @@ export function SettingsView({
   catalogItems = [],
   stockLots = [],
   shoppingItems = [],
+  financeAccounts = [],
   financeCategories = [],
   financeRecurring = [],
   financeTransactions = [],
@@ -898,6 +904,22 @@ export function SettingsView({
           sections={supermarketSections}
           catalogItems={catalogItems}
           shoppingItems={shoppingItems}
+          deviceId={settings.deviceId}
+          onNotify={(msg) => setStatusMsg(msg)}
+        />
+      </AccordionSection>
+
+      {/* Finance Accounts (Joint + Personal + Transfers) */}
+      <AccordionSection
+        title="Contas Financeiras"
+        icon={<Landmark className="h-4 w-4 shrink-0 text-teal-700" />}
+        badge={`${financeAccounts.filter((a) => !a.isArchived).length || 1}`}
+        isOpen={openSection === 'finance_accounts'}
+        onToggle={() => toggleSection('finance_accounts')}
+      >
+        <FinanceAccountsEditor
+          accounts={financeAccounts}
+          members={members}
           deviceId={settings.deviceId}
           onNotify={(msg) => setStatusMsg(msg)}
         />

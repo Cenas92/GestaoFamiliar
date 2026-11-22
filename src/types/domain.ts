@@ -234,7 +234,29 @@ export interface AppSettings {
   initialized: boolean;
 }
 
-export type FinanceKind = 'income' | 'fixed' | 'variable';
+export type FinanceKind = 'income' | 'fixed' | 'variable' | 'transfer';
+
+export type FinanceAccountType =
+  | 'joint'
+  | 'personal'
+  | 'savings'
+  | 'meal_card'
+  | 'cash'
+  | 'other';
+
+export type FinanceSplitMode = 'equal' | 'proportional' | 'fixed';
+
+export interface FinanceAccount extends SyncMetadata {
+  name: string;
+  accountType: FinanceAccountType;
+  memberId: string | null;
+  colorToken: SectionColorToken | string;
+  initialBalance: number | null;
+  splitMode?: FinanceSplitMode;
+  fixedQuota?: number | null;
+  sortOrder: number;
+  isArchived: boolean;
+}
 
 export type FinanceRecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
 
@@ -266,7 +288,7 @@ export type FinanceCategoryIconKey =
 
 export interface FinanceCategoryConfig extends SyncMetadata {
   name: string;
-  kind: FinanceKind;
+  kind: 'income' | 'fixed' | 'variable';
   colorToken: SectionColorToken | string;
   icon: FinanceCategoryIconKey | string;
   sortOrder: number;
@@ -277,6 +299,7 @@ export interface FinanceRecurringRule extends SyncMetadata {
   title: string;
   kind: 'income' | 'fixed';
   categoryId: string;
+  accountId?: string | null;
   amount: number;
   frequency: FinanceRecurringFrequency;
   dayOfMonth: number;
@@ -290,6 +313,8 @@ export interface FinanceTransaction extends SyncMetadata {
   title: string;
   kind: FinanceKind;
   categoryId: string;
+  accountId?: string | null;
+  toAccountId?: string | null;
   amount: number;
   date: string; // YYYY-MM-DD
   month: string; // YYYY-MM

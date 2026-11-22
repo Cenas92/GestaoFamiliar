@@ -5,6 +5,7 @@ import type {
   AppSettings,
   AttachmentRecord,
   CatalogItem,
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceRecurringRule,
   FinanceTransaction,
@@ -29,6 +30,7 @@ export interface FamilyDataState {
   shoppingItems: ShoppingItem[];
   members: HouseholdMember[];
   attachments: AttachmentRecord[];
+  financeAccounts: FinanceAccount[];
   financeCategories: FinanceCategoryConfig[];
   financeRecurring: FinanceRecurringRule[];
   financeTransactions: FinanceTransaction[];
@@ -138,6 +140,17 @@ export function useFamilyData(): FamilyDataState {
     [] as AttachmentRecord[],
   );
 
+  const financeAccounts = useLiveQuery(
+    async () => {
+      const all = await db.financeAccounts.toArray();
+      return all
+        .filter((a) => !a.deletedAt)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'pt-PT'));
+    },
+    [],
+    [] as FinanceAccount[],
+  );
+
   const financeCategories = useLiveQuery(
     async () => {
       const all = await db.financeCategories.toArray();
@@ -181,6 +194,7 @@ export function useFamilyData(): FamilyDataState {
     shoppingItems,
     members,
     attachments,
+    financeAccounts,
     financeCategories,
     financeRecurring,
     financeTransactions,

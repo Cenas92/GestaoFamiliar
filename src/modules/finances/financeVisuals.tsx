@@ -25,10 +25,12 @@ import {
 } from 'lucide-react';
 import type { TypeVisualMeta } from '../../components/TypeIconBadge';
 import type {
+  FinanceAccountType,
   FinanceCategoryConfig,
   FinanceCategoryIconKey,
   FinanceKind,
   FinanceRecurringFrequency,
+  FinanceSplitMode,
   SectionColorToken,
 } from '../../types/domain';
 import { getSectionColorStyle } from '../../utils/sectionVisuals';
@@ -68,12 +70,28 @@ export const FINANCE_KIND_LABELS: Record<FinanceKind, string> = {
   income: 'Receita',
   fixed: 'Despesa fixa',
   variable: 'Despesa variável',
+  transfer: 'Transferência',
 };
 
-export const FINANCE_KIND_PLURAL_LABELS: Record<FinanceKind, string> = {
+export const FINANCE_KIND_PLURAL_LABELS: Record<'income' | 'fixed' | 'variable', string> = {
   income: 'Receitas',
   fixed: 'Despesas fixas',
   variable: 'Despesas variáveis',
+};
+
+export const FINANCE_ACCOUNT_TYPE_LABELS: Record<FinanceAccountType, string> = {
+  joint: 'Conta Conjunta',
+  personal: 'Conta Pessoal',
+  savings: 'Poupança',
+  meal_card: 'Cartão Refeição',
+  cash: 'Dinheiro',
+  other: 'Outra',
+};
+
+export const FINANCE_SPLIT_MODE_LABELS: Record<FinanceSplitMode, string> = {
+  equal: '50% / 50% (igual)',
+  proportional: 'Proporcional aos ordenados',
+  fixed: 'Quota fixa por pessoa',
 };
 
 export const FINANCE_FREQUENCY_LABELS: Record<FinanceRecurringFrequency, string> = {
@@ -86,7 +104,7 @@ export const FINANCE_FREQUENCY_LABELS: Record<FinanceRecurringFrequency, string>
 export interface DefaultFinanceCategorySpec {
   id: string;
   name: string;
-  kind: FinanceKind;
+  kind: 'income' | 'fixed' | 'variable';
   colorToken: SectionColorToken;
   icon: FinanceCategoryIconKey;
   sortOrder: number;
@@ -149,5 +167,6 @@ export function formatEur(amount: number): string {
 export function formatSignedEur(amount: number, kind: FinanceKind): string {
   const formatted = formatEur(Math.abs(amount));
   if (kind === 'income') return `+${formatted}`;
+  if (kind === 'transfer') return `⇄ ${formatted}`;
   return `−${formatted}`;
 }

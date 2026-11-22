@@ -10,15 +10,26 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 
 export default defineConfig(({ mode }) => {
   const base = mode === 'production' ? (process.env.VITE_BASE_PATH ?? '/GestaoFamiliar/') : '/';
+  const buildDate = new Date().toISOString();
 
   return {
     base,
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
-      __APP_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+      __APP_BUILD_DATE__: JSON.stringify(buildDate),
       __APP_CREATOR__: JSON.stringify('AI-Cenas92'),
     },
     plugins: [
+      {
+        name: 'emit-version-json',
+        generateBundle() {
+          this.emitFile({
+            type: 'asset',
+            fileName: 'version.json',
+            source: JSON.stringify({ version: pkg.version, buildDate }),
+          });
+        },
+      },
       react(),
       tailwindcss(),
       VitePWA({

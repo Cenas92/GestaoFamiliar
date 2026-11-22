@@ -1,11 +1,15 @@
+import { DEFAULT_JOINT_ACCOUNT_ID } from '../../data/starterCatalog';
 import { db, type FamilyDatabase } from '../../db/database';
 import type {
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceKind,
   FinanceRecurringFrequency,
   FinanceRecurringRule,
+  FinanceSplitMode,
   FinanceTransaction,
   FinanceTransactionStatus,
+  HouseholdMember,
 } from '../../types/domain';
 import { softDeleteAttachmentIfUnused } from '../../utils/attachmentStorage';
 import { createSyncMetadata, nowIso } from '../../utils/id';
@@ -161,6 +165,8 @@ export async function ensureRecurringTransactionsForMonth(
       title: rule.title,
       kind: rule.kind,
       categoryId: rule.categoryId,
+      accountId: rule.accountId ?? DEFAULT_JOINT_ACCOUNT_ID,
+      toAccountId: null,
       amount: rule.amount,
       date: clampDayToMonth(month, rule.dayOfMonth),
       month,
@@ -212,6 +218,8 @@ export interface MonthFinanceSummary {
   expensesTotal: number;
   expensesPaid: number;
   expensesPlanned: number;
+  transfersIn: number;
+  transfersOut: number;
   balanceTotal: number;
   balancePaid: number;
   savingsRate: number | null;
@@ -220,10 +228,19 @@ export interface MonthFinanceSummary {
   incomeByCategory: CategoryBreakdownItem[];
 }
 
+export function resolveTransactionAccountId(
+  tx: Pick<FinanceTransaction, 'accountId'>,
+  defaultAccountId: string = DEFAULT_JOINT_ACCOUNT_ID,
+): string {
+  return tx.accountId || defaultAccountId;
+}
+
 export function summarizeMonthFinances(
   month: string,
   transactions: FinanceTransaction[],
   categories: FinanceCategoryConfig[],
+  accountFilterId: string | 'all' = 'all',
+  defaultAccountId: string = DEFAULT_JOINT_ACCOUNT_ID,
 ): MonthFinanceSummary {
   const catById = new Map(categories.map((c) => [c.id, c]));
   const active = transactions.filter(
@@ -239,6 +256,11 @@ export function summarizeMonthFinances(
   let variableTotal = 0;
   let variablePaid = 0;
   let variablePlanned = 0;
+  let transfersIn = 0;
+  let transfersOut = 0;
+  let transfersInPaid = 0;
+  let transfersOutPaid = 0;
+  let countedTransactions = 0;
 
   const expenseMap = new Map<string, Omit<CategoryBreakdownItem, 'sharePercent'>>();
   const incomeMap = new Map<string, Omit<CategoryBreakdownItem, 'sharePercent'>>();
@@ -246,7 +268,33 @@ export function summarizeMonthFinances(
   for (const tx of active) {
     const val = Math.max(0, Number(tx.amount) || 0);
     const isPaid = tx.status === 'paid';
+    const txAccountId = resolveTransactionAccountId(tx, defaultAccountId);
 
+    if (tx.kind === 'transfer') {
+      if (accountFilterId === 'all') {
+        // Internal transfers between own accounts do not inflate household income/expenses
+        continue;
+      }
+      const isOut = txAccountId === accountFilterId;
+      const isIn = tx.toAccountId === accountFilterId;
+      if (!isOut && !isIn) continue;
+      countedTransactions += 1;
+      if (isOut) {
+        transfersOut += val;
+        if (isPaid) transfersOutPaid += val;
+      }
+      if (isIn) {
+        transfersIn += val;
+        if (isPaid) transfersInPaid += val;
+      }
+      continue;
+    }
+
+    if (accountFilterId !== 'all' && txAccountId !== accountFilterId) {
+      continue;
+    }
+
+    countedTransactions += 1;
     if (tx.kind === 'income') {
       incomeTotal += val;
       if (isPaid) incomePaid += val;
@@ -286,8 +334,10 @@ export function summarizeMonthFinances(
   const expensesTotal = fixedTotal + variableTotal;
   const expensesPaid = fixedPaid + variablePaid;
   const expensesPlanned = fixedPlanned + variablePlanned;
-  const balanceTotal = incomeTotal - expensesTotal;
-  const balancePaid = incomePaid - expensesPaid;
+  const balanceTotal =
+    Math.round((incomeTotal + transfersIn - expensesTotal - transfersOut) * 100) / 100;
+  const balancePaid =
+    Math.round((incomePaid + transfersInPaid - expensesPaid - transfersOutPaid) * 100) / 100;
   const savingsRate = incomeTotal > 0 ? Math.round((balanceTotal / incomeTotal) * 100) : null;
 
   const expenseByCategory: CategoryBreakdownItem[] = Array.from(expenseMap.values())
@@ -318,12 +368,179 @@ export function summarizeMonthFinances(
     expensesTotal,
     expensesPaid,
     expensesPlanned,
+    transfersIn,
+    transfersOut,
     balanceTotal,
     balancePaid,
     savingsRate,
-    transactionCount: active.length,
+    transactionCount: countedTransactions,
     expenseByCategory,
     incomeByCategory,
+  };
+}
+
+export function computeAccountAccumulatedBalance(
+  account: FinanceAccount,
+  transactions: FinanceTransaction[],
+  defaultAccountId: string = DEFAULT_JOINT_ACCOUNT_ID,
+): number | null {
+  if (account.initialBalance === null || !Number.isFinite(account.initialBalance)) {
+    return null;
+  }
+  let balance = account.initialBalance;
+  for (const tx of transactions) {
+    if (tx.deletedAt || tx.excludeFromTotals || tx.status !== 'paid') continue;
+    const val = Math.max(0, Number(tx.amount) || 0);
+    const txAccId = resolveTransactionAccountId(tx, defaultAccountId);
+    if (tx.kind === 'transfer') {
+      if (txAccId === account.id) balance -= val;
+      if (tx.toAccountId === account.id) balance += val;
+    } else if (txAccId === account.id) {
+      if (tx.kind === 'income') balance += val;
+      else balance -= val;
+    }
+  }
+  return Math.round(balance * 100) / 100;
+}
+
+export interface JointSettlementParticipant {
+  account: FinanceAccount;
+  member: HouseholdMember | null;
+  displayName: string;
+  monthlyIncome: number;
+  sharePercent: number;
+  targetShare: number;
+  directDepositsToJoint: number;
+  alreadyTransferredNet: number;
+  netContributed: number;
+  /** Positive = transfer from personal -> joint; Negative = transfer from joint -> personal */
+  deltaToTransfer: number;
+  direction: 'to_joint' | 'from_joint' | 'settled';
+  amountToTransfer: number;
+}
+
+export interface JointAccountSettlement {
+  month: string;
+  jointAccount: FinanceAccount;
+  splitMode: FinanceSplitMode;
+  jointExpensesTotal: number;
+  participants: JointSettlementParticipant[];
+}
+
+export function calculateJointAccountSettlement(
+  month: string,
+  jointAccount: FinanceAccount,
+  allAccounts: FinanceAccount[],
+  transactions: FinanceTransaction[],
+  members: HouseholdMember[],
+): JointAccountSettlement | null {
+  const personalAccounts = allAccounts.filter(
+    (a) => !a.deletedAt && !a.isArchived && a.accountType === 'personal',
+  );
+  if (personalAccounts.length === 0) return null;
+
+  const membersById = new Map(members.map((m) => [m.id, m]));
+  const splitMode: FinanceSplitMode = jointAccount.splitMode ?? 'equal';
+  const monthTxs = transactions.filter(
+    (t) => !t.deletedAt && !t.excludeFromTotals && t.month === month,
+  );
+
+  // Common expenses paid from the joint account
+  const jointExpensesTotal =
+    Math.round(
+      monthTxs
+        .filter((t) => {
+          if (t.kind !== 'fixed' && t.kind !== 'variable') return false;
+          const accId = resolveTransactionAccountId(t, jointAccount.id);
+          return accId === jointAccount.id;
+        })
+        .reduce((acc, t) => acc + Math.max(0, Number(t.amount) || 0), 0) * 100,
+    ) / 100;
+
+  // Compute each participant's total monthly income and direct deposits into the joint account
+  const rawParticipants = personalAccounts.map((acc) => {
+    const member = acc.memberId ? membersById.get(acc.memberId) ?? null : null;
+
+    let monthlyIncome = 0;
+    let directDepositsToJoint = 0;
+    let alreadyTransferredNet = 0;
+
+    for (const tx of monthTxs) {
+      const val = Math.max(0, Number(tx.amount) || 0);
+      const txAccId = resolveTransactionAccountId(tx, jointAccount.id);
+
+      if (tx.kind === 'income') {
+        const belongsByAccount = txAccId === acc.id;
+        const belongsByMember = Boolean(acc.memberId && tx.memberId === acc.memberId);
+        if (belongsByAccount || belongsByMember) {
+          monthlyIncome += val;
+          if (txAccId === jointAccount.id) {
+            directDepositsToJoint += val;
+          }
+        }
+      } else if (tx.kind === 'transfer') {
+        if (txAccId === acc.id && tx.toAccountId === jointAccount.id) {
+          alreadyTransferredNet += val;
+        } else if (txAccId === jointAccount.id && tx.toAccountId === acc.id) {
+          alreadyTransferredNet -= val;
+        }
+      }
+    }
+
+    return {
+      account: acc,
+      member,
+      displayName: member?.name ?? acc.name,
+      monthlyIncome: Math.round(monthlyIncome * 100) / 100,
+      directDepositsToJoint: Math.round(directDepositsToJoint * 100) / 100,
+      alreadyTransferredNet: Math.round(alreadyTransferredNet * 100) / 100,
+    };
+  });
+
+  const totalSalaries = rawParticipants.reduce((acc, p) => acc + p.monthlyIncome, 0);
+
+  const participants: JointSettlementParticipant[] = rawParticipants.map((p) => {
+    let targetShare = 0;
+    let sharePercent = Math.round(100 / rawParticipants.length);
+
+    if (splitMode === 'fixed') {
+      targetShare = Math.max(0, Number(p.account.fixedQuota) || 0);
+      const sumQuotas = rawParticipants.reduce(
+        (acc, x) => acc + Math.max(0, Number(x.account.fixedQuota) || 0),
+        0,
+      );
+      sharePercent = sumQuotas > 0 ? Math.round((targetShare / sumQuotas) * 100) : 0;
+    } else if (splitMode === 'proportional' && totalSalaries > 0) {
+      const ratio = p.monthlyIncome / totalSalaries;
+      targetShare = Math.round(jointExpensesTotal * ratio * 100) / 100;
+      sharePercent = Math.round(ratio * 100);
+    } else {
+      targetShare = Math.round((jointExpensesTotal / rawParticipants.length) * 100) / 100;
+      sharePercent = Math.round(100 / rawParticipants.length);
+    }
+
+    const netContributed = Math.round((p.directDepositsToJoint + p.alreadyTransferredNet) * 100) / 100;
+    const deltaToTransfer = Math.round((targetShare - netContributed) * 100) / 100;
+    const direction: JointSettlementParticipant['direction'] =
+      deltaToTransfer > 0.01 ? 'to_joint' : deltaToTransfer < -0.01 ? 'from_joint' : 'settled';
+
+    return {
+      ...p,
+      sharePercent,
+      targetShare,
+      netContributed,
+      deltaToTransfer,
+      direction,
+      amountToTransfer: Math.round(Math.abs(deltaToTransfer) * 100) / 100,
+    };
+  });
+
+  return {
+    month,
+    jointAccount,
+    splitMode,
+    jointExpensesTotal,
+    participants,
   };
 }
 
@@ -345,7 +562,13 @@ export function buildCategoryBudgetProgress(
 ): CategoryBudgetProgress[] {
   const spentByCategory = new Map<string, number>();
   for (const tx of transactions) {
-    if (tx.deletedAt || tx.excludeFromTotals || tx.month !== month || tx.kind === 'income') {
+    if (
+      tx.deletedAt ||
+      tx.excludeFromTotals ||
+      tx.month !== month ||
+      tx.kind === 'income' ||
+      tx.kind === 'transfer'
+    ) {
       continue;
     }
     const val = Math.max(0, Number(tx.amount) || 0);
@@ -422,7 +645,9 @@ export function buildMonthlyFinanceHistory(
   }
 
   for (const tx of transactions) {
-    if (tx.deletedAt || tx.excludeFromTotals || !monthSet.has(tx.month)) continue;
+    if (tx.deletedAt || tx.excludeFromTotals || tx.kind === 'transfer' || !monthSet.has(tx.month)) {
+      continue;
+    }
     const bucket = totalsByMonth.get(tx.month);
     if (!bucket) continue;
     const val = Math.max(0, Number(tx.amount) || 0);
@@ -573,6 +798,8 @@ export interface SaveTransactionInput {
   title: string;
   kind: FinanceKind;
   categoryId: string;
+  accountId?: string | null;
+  toAccountId?: string | null;
   amount: number;
   date: string;
   status: FinanceTransactionStatus;
@@ -595,13 +822,21 @@ export async function saveFinanceTransaction(
   const now = nowIso();
   const cleanDate = input.date || todayDateString();
   const month = cleanDate.slice(0, 7);
+  const resolvedAccountId =
+    input.accountId !== undefined
+      ? input.accountId
+      : (existing?.accountId ?? DEFAULT_JOINT_ACCOUNT_ID);
+  const resolvedToAccountId =
+    input.kind === 'transfer' ? (input.toAccountId ?? existing?.toAccountId ?? null) : null;
 
   const record: FinanceTransaction = existing
     ? {
         ...existing,
         title: input.title.trim(),
         kind: input.kind,
-        categoryId: input.categoryId,
+        categoryId: input.kind === 'transfer' ? '' : input.categoryId,
+        accountId: resolvedAccountId,
+        toAccountId: resolvedToAccountId,
         amount: Math.max(0, Math.round(input.amount * 100) / 100),
         date: cleanDate,
         month,
@@ -611,9 +846,11 @@ export async function saveFinanceTransaction(
         memberId: input.memberId ?? null,
         notes: (input.notes ?? '').trim(),
         photoAttachmentId: input.photoAttachmentId ?? null,
-        isWarranty: Boolean(input.isWarranty),
-        warrantyExpiresAt: input.isWarranty ? (input.warrantyExpiresAt || null) : null,
-        warrantyStore: input.isWarranty ? (input.warrantyStore ?? '').trim() : '',
+        isWarranty: input.kind === 'transfer' ? false : Boolean(input.isWarranty),
+        warrantyExpiresAt:
+          input.kind !== 'transfer' && input.isWarranty ? (input.warrantyExpiresAt || null) : null,
+        warrantyStore:
+          input.kind !== 'transfer' && input.isWarranty ? (input.warrantyStore ?? '').trim() : '',
         excludeFromTotals: Boolean(input.excludeFromTotals),
         deletedAt: null,
         updatedAt: now,
@@ -623,7 +860,9 @@ export async function saveFinanceTransaction(
         ...createSyncMetadata(deviceId, input.id),
         title: input.title.trim(),
         kind: input.kind,
-        categoryId: input.categoryId,
+        categoryId: input.kind === 'transfer' ? '' : input.categoryId,
+        accountId: resolvedAccountId,
+        toAccountId: resolvedToAccountId,
         amount: Math.max(0, Math.round(input.amount * 100) / 100),
         date: cleanDate,
         month,
@@ -632,9 +871,11 @@ export async function saveFinanceTransaction(
         memberId: input.memberId ?? null,
         notes: (input.notes ?? '').trim(),
         photoAttachmentId: input.photoAttachmentId ?? null,
-        isWarranty: Boolean(input.isWarranty),
-        warrantyExpiresAt: input.isWarranty ? (input.warrantyExpiresAt || null) : null,
-        warrantyStore: input.isWarranty ? (input.warrantyStore ?? '').trim() : '',
+        isWarranty: input.kind === 'transfer' ? false : Boolean(input.isWarranty),
+        warrantyExpiresAt:
+          input.kind !== 'transfer' && input.isWarranty ? (input.warrantyExpiresAt || null) : null,
+        warrantyStore:
+          input.kind !== 'transfer' && input.isWarranty ? (input.warrantyStore ?? '').trim() : '',
         excludeFromTotals: Boolean(input.excludeFromTotals),
       };
 
@@ -690,6 +931,7 @@ export interface SaveRecurringRuleInput {
   title: string;
   kind: 'income' | 'fixed';
   categoryId: string;
+  accountId?: string | null;
   amount: number;
   frequency: FinanceRecurringFrequency;
   dayOfMonth: number;
@@ -707,6 +949,10 @@ export async function saveFinanceRecurringRule(
 ): Promise<FinanceRecurringRule> {
   const existing = input.id ? await database.financeRecurring.get(input.id) : undefined;
   const now = nowIso();
+  const resolvedAccountId =
+    input.accountId !== undefined
+      ? input.accountId
+      : (existing?.accountId ?? DEFAULT_JOINT_ACCOUNT_ID);
 
   const rule: FinanceRecurringRule = existing
     ? {
@@ -714,6 +960,7 @@ export async function saveFinanceRecurringRule(
         title: input.title.trim(),
         kind: input.kind,
         categoryId: input.categoryId,
+        accountId: resolvedAccountId,
         amount: Math.max(0, Math.round(input.amount * 100) / 100),
         frequency: input.frequency,
         dayOfMonth: Math.max(1, Math.min(31, Math.round(input.dayOfMonth) || 1)),
@@ -730,6 +977,7 @@ export async function saveFinanceRecurringRule(
         title: input.title.trim(),
         kind: input.kind,
         categoryId: input.categoryId,
+        accountId: resolvedAccountId,
         amount: Math.max(0, Math.round(input.amount * 100) / 100),
         frequency: input.frequency,
         dayOfMonth: Math.max(1, Math.min(31, Math.round(input.dayOfMonth) || 1)),
@@ -752,6 +1000,7 @@ export async function saveFinanceRecurringRule(
         title: rule.title,
         kind: rule.kind,
         categoryId: rule.categoryId,
+        accountId: rule.accountId ?? DEFAULT_JOINT_ACCOUNT_ID,
         amount: rule.amount,
         date: clampDayToMonth(activeMonth, rule.dayOfMonth),
         memberId: rule.memberId,

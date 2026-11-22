@@ -6,11 +6,12 @@ import { db } from '../../db/database';
 import type {
   FinanceCategoryConfig,
   FinanceCategoryIconKey,
-  FinanceKind,
   FinanceRecurringRule,
   FinanceTransaction,
   SectionColorToken,
 } from '../../types/domain';
+
+type FinanceCategoryKind = 'income' | 'fixed' | 'variable';
 import { createSyncMetadata, nowIso } from '../../utils/id';
 import { getSectionColorStyle, SECTION_COLOR_OPTIONS } from '../../utils/sectionVisuals';
 import {
@@ -30,7 +31,7 @@ interface FinanceCategoriesEditorProps {
 
 interface CategoryDraft {
   name: string;
-  kind: FinanceKind;
+  kind: FinanceCategoryKind;
   colorToken: SectionColorToken | string;
   icon: FinanceCategoryIconKey | string;
   monthlyBudget: string;
@@ -44,7 +45,7 @@ function parseOptionalBudget(raw: string): number | null {
   return Math.round(num * 100) / 100;
 }
 
-const KINDS: FinanceKind[] = ['income', 'fixed', 'variable'];
+const KINDS: FinanceCategoryKind[] = ['income', 'fixed', 'variable'];
 
 function CategoryStylePickers({
   draft,
@@ -119,7 +120,7 @@ export function FinanceCategoriesEditor({
   deviceId,
   onNotify,
 }: FinanceCategoriesEditorProps) {
-  const [activeKind, setActiveKind] = useState<FinanceKind>('variable');
+  const [activeKind, setActiveKind] = useState<FinanceCategoryKind>('variable');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<CategoryDraft>({
     name: '',
@@ -355,7 +356,7 @@ export function FinanceCategoriesEditor({
                   <select
                     value={editDraft.kind}
                     onChange={(e) =>
-                      setEditDraft({ ...editDraft, kind: e.target.value as FinanceKind })
+                      setEditDraft({ ...editDraft, kind: e.target.value as FinanceCategoryKind })
                     }
                     aria-label="Tipo da categoria"
                     className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"

@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildStarterFinanceCategories } from '../../data/starterCatalog';
 import { FamilyDatabase } from '../../db/database';
-import type { FinanceRecurringRule, FinanceTransaction } from '../../types/domain';
+import type {
+  FinanceAccount,
+  FinanceRecurringRule,
+  FinanceTransaction,
+  HouseholdMember,
+} from '../../types/domain';
 import {
   addYearsToDateString,
   buildCategoryBudgetProgress,
   buildMonthlyFinanceHistory,
   buildRecurringInstanceId,
+  calculateJointAccountSettlement,
   clampDayToMonth,
+  computeAccountAccumulatedBalance,
   deleteFinanceRecurringRule,
   deleteFinanceTransaction,
   ensureRecurringTransactionsForMonth,
@@ -394,5 +401,217 @@ describe('financeService', () => {
     expect(upcoming.map((u) => u.tx.title)).toEqual(['Água (em atraso)', 'Luz (em breve)']);
     expect(upcoming[0].isOverdue).toBe(true);
     expect(upcoming[1].daysUntil).toBe(3);
+  });
+
+  it('calcula acerto da conta conjunta (50/50, proporcional e quota fixa) e isola transferências dos totais globais', async () => {
+    const categories = buildStarterFinanceCategories('dev-1');
+    const now = '2026-11-22T10:00:00.000Z';
+    const members: HouseholdMember[] = [
+      {
+        id: 'mem-a',
+        name: 'André',
+        role: 'adult',
+        dietaryNotes: '',
+        allergies: [],
+        defaultServingsWeight: 1,
+        avatarColor: '#0f766e',
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      },
+      {
+        id: 'mem-b',
+        name: 'Inês',
+        role: 'adult',
+        dietaryNotes: '',
+        allergies: [],
+        defaultServingsWeight: 1,
+        avatarColor: '#6366f1',
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        lastModifiedBy: 'dev-1',
+      },
+    ];
+
+    const jointAcc: FinanceAccount = {
+      id: 'fin-acc-joint',
+      name: 'Conta Conjunta',
+      accountType: 'joint',
+      memberId: null,
+      colorToken: 'teal',
+      initialBalance: 1000,
+      splitMode: 'equal',
+      fixedQuota: null,
+      sortOrder: 1,
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      lastModifiedBy: 'dev-1',
+    };
+    const accA: FinanceAccount = {
+      ...jointAcc,
+      id: 'acc-a',
+      name: 'Conta André',
+      accountType: 'personal',
+      memberId: 'mem-a',
+      initialBalance: 500,
+      splitMode: undefined,
+      fixedQuota: 750,
+      sortOrder: 2,
+    };
+    const accB: FinanceAccount = {
+      ...jointAcc,
+      id: 'acc-b',
+      name: 'Conta Inês',
+      accountType: 'personal',
+      memberId: 'mem-b',
+      initialBalance: 800,
+      splitMode: undefined,
+      fixedQuota: 650,
+      sortOrder: 3,
+    };
+    const accounts = [jointAcc, accA, accB];
+
+    // Ordenado André cai na Conjunta (1600€), Ordenado Inês cai na Conta Inês (1400€), Despesas comuns na Conjunta (1200€)
+    const txs: FinanceTransaction[] = [
+      await saveFinanceTransaction(
+        {
+          title: 'Ordenado André',
+          kind: 'income',
+          categoryId: 'fin-cat-salary',
+          accountId: 'fin-acc-joint',
+          memberId: 'mem-a',
+          amount: 1600,
+          date: '2026-11-25',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Ordenado Inês',
+          kind: 'income',
+          categoryId: 'fin-cat-salary',
+          accountId: 'acc-b',
+          memberId: 'mem-b',
+          amount: 1400,
+          date: '2026-11-25',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Crédito + Despesas Comuns',
+          kind: 'fixed',
+          categoryId: 'fin-cat-housing',
+          accountId: 'fin-acc-joint',
+          amount: 1200,
+          date: '2026-11-02',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+    ];
+
+    // 1) Modo 50/50
+    const equalSettle = calculateJointAccountSettlement('2026-11', jointAcc, accounts, txs, members)!;
+    expect(equalSettle.jointExpensesTotal).toBe(1200);
+    const equalA = equalSettle.participants.find((p) => p.account.id === 'acc-a')!;
+    const equalB = equalSettle.participants.find((p) => p.account.id === 'acc-b')!;
+    expect(equalA.targetShare).toBe(600);
+    expect(equalA.direction).toBe('from_joint');
+    expect(equalA.amountToTransfer).toBe(1000); // 1600 - 600
+    expect(equalB.targetShare).toBe(600);
+    expect(equalB.direction).toBe('to_joint');
+    expect(equalB.amountToTransfer).toBe(600);
+
+    // 2) Modo Proporcional (1600/3000 = 53.33% -> 640€, 1400/3000 = 46.67% -> 560€)
+    const propSettle = calculateJointAccountSettlement(
+      '2026-11',
+      { ...jointAcc, splitMode: 'proportional' },
+      accounts,
+      txs,
+      members,
+    )!;
+    const propA = propSettle.participants.find((p) => p.account.id === 'acc-a')!;
+    const propB = propSettle.participants.find((p) => p.account.id === 'acc-b')!;
+    expect(propA.targetShare).toBe(640);
+    expect(propA.amountToTransfer).toBe(960);
+    expect(propB.targetShare).toBe(560);
+    expect(propB.amountToTransfer).toBe(560);
+
+    // 3) Modo Quota fixa (750€ e 650€)
+    const fixedSettle = calculateJointAccountSettlement(
+      '2026-11',
+      { ...jointAcc, splitMode: 'fixed' },
+      accounts,
+      txs,
+      members,
+    )!;
+    expect(fixedSettle.participants.find((p) => p.account.id === 'acc-a')?.amountToTransfer).toBe(850);
+    expect(fixedSettle.participants.find((p) => p.account.id === 'acc-b')?.amountToTransfer).toBe(650);
+
+    // Registar as 2 transferências do modo 50/50 -> ambos ficam Acertados e os totais globais não mudam!
+    const txsWithTransfers = [
+      ...txs,
+      await saveFinanceTransaction(
+        {
+          title: 'Acerto André',
+          kind: 'transfer',
+          categoryId: '',
+          accountId: 'fin-acc-joint',
+          toAccountId: 'acc-a',
+          amount: 1000,
+          date: '2026-11-26',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+      await saveFinanceTransaction(
+        {
+          title: 'Acerto Inês',
+          kind: 'transfer',
+          categoryId: '',
+          accountId: 'acc-b',
+          toAccountId: 'fin-acc-joint',
+          amount: 600,
+          date: '2026-11-26',
+          status: 'paid',
+        },
+        'dev-1',
+        testDb,
+      ),
+    ];
+
+    const afterSettle = calculateJointAccountSettlement(
+      '2026-11',
+      jointAcc,
+      accounts,
+      txsWithTransfers,
+      members,
+    )!;
+    expect(afterSettle.participants.every((p) => p.direction === 'settled')).toBe(true);
+
+    // Global summary ignores internal transfers
+    const globalSummary = summarizeMonthFinances('2026-11', txsWithTransfers, categories, 'all');
+    expect(globalSummary.incomeTotal).toBe(3000);
+    expect(globalSummary.expensesTotal).toBe(1200);
+    expect(globalSummary.balanceTotal).toBe(1800);
+
+    // Per-account summary & accumulated balance include transfers accurately
+    const summaryA = summarizeMonthFinances('2026-11', txsWithTransfers, categories, 'acc-a');
+    expect(summaryA.transfersIn).toBe(1000);
+    expect(summaryA.balanceTotal).toBe(1000);
+    expect(computeAccountAccumulatedBalance(accA, txsWithTransfers)).toBe(1500); // 500 + 1000
+    expect(computeAccountAccumulatedBalance(accB, txsWithTransfers)).toBe(1600); // 800 + 1400 - 600
+    expect(computeAccountAccumulatedBalance(jointAcc, txsWithTransfers)).toBe(1000); // 1000 + 1600 - 1200 - 1000 + 600
   });
 });

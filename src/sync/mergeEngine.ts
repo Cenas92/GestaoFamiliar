@@ -1,6 +1,7 @@
 import type {
   AttachmentRecord,
   CatalogItem,
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceRecurringRule,
   FinanceTransaction,
@@ -37,6 +38,7 @@ export interface FamilySyncSnapshot {
   mealPlan: MealPlanEntry[];
   shoppingItems: ShoppingItem[];
   members: HouseholdMember[];
+  financeAccounts?: FinanceAccount[];
   financeCategories?: FinanceCategoryConfig[];
   financeRecurring?: FinanceRecurringRule[];
   financeTransactions?: FinanceTransaction[];
@@ -198,6 +200,10 @@ export function mergeFamilySnapshots(
   const mealPlan = mergeSyncCollections(local.mealPlan, remote.mealPlan);
   const shoppingItems = mergeSyncCollections(local.shoppingItems, remote.shoppingItems);
   const members = mergeSyncCollections(local.members, remote.members);
+  const financeAccounts = mergeSyncCollections(
+    local.financeAccounts ?? [],
+    remote.financeAccounts ?? [],
+  );
   const financeCategories = mergeSyncCollections(
     local.financeCategories ?? [],
     remote.financeCategories ?? [],
@@ -222,6 +228,7 @@ export function mergeFamilySnapshots(
     mealPlan,
     shoppingItems,
     members,
+    financeAccounts,
     financeCategories,
     financeRecurring,
     financeTransactions,
@@ -244,6 +251,7 @@ export function mergeFamilySnapshots(
       mealPlan: mealPlan.merged,
       shoppingItems: shoppingItems.merged,
       members: members.merged,
+      financeAccounts: financeAccounts.merged,
       financeCategories: financeCategories.merged,
       financeRecurring: financeRecurring.merged,
       financeTransactions: financeTransactions.merged,

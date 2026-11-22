@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Check, ShieldCheck, Trash2 } from 'lucide-react';
 import { CameraPhotoControl } from '../../components/CameraPhotoControl';
 import { Modal } from '../../components/Modal';
+import { DEFAULT_JOINT_ACCOUNT_ID } from '../../data/starterCatalog';
 import type {
+  FinanceAccount,
   FinanceCategoryConfig,
   FinanceKind,
   FinanceTransaction,
@@ -22,6 +24,8 @@ interface FinanceTransactionModalProps {
   onClose: () => void;
   editingTransaction: FinanceTransaction | null;
   activeMonth: string;
+  accounts?: FinanceAccount[];
+  defaultAccountId?: string;
   categories: FinanceCategoryConfig[];
   members: HouseholdMember[];
   deviceId: string;
@@ -55,6 +59,8 @@ export function FinanceTransactionModal({
   onClose,
   editingTransaction,
   activeMonth,
+  accounts = [],
+  defaultAccountId,
   categories,
   members,
   deviceId,
@@ -63,10 +69,20 @@ export function FinanceTransactionModal({
   initialPhotoAttachmentId = null,
   onSaved,
 }: FinanceTransactionModalProps) {
+  const activeAccounts = useMemo(
+    () => accounts.filter((a) => !a.deletedAt && !a.isArchived),
+    [accounts],
+  );
+  const hasMultipleAccounts = activeAccounts.length >= 2;
+  const fallbackAccountId =
+    defaultAccountId || activeAccounts[0]?.id || DEFAULT_JOINT_ACCOUNT_ID;
+
   const [kind, setKind] = useState<FinanceKind>(initialKind);
   const [title, setTitle] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [accountId, setAccountId] = useState(fallbackAccountId);
+  const [toAccountId, setToAccountId] = useState('');
   const [date, setDate] = useState(() => defaultDateForMonth(activeMonth));
   const [status, setStatus] = useState<FinanceTransactionStatus>('paid');
   const [memberId, setMemberId] = useState<string>('');
@@ -92,6 +108,13 @@ export function FinanceTransactionModal({
         editingTransaction.amount > 0 ? String(editingTransaction.amount).replace('.', ',') : '',
       );
       setCategoryId(editingTransaction.categoryId);
+      setAccountId(editingTransaction.accountId || fallbackAccountId);
+      setToAccountId(
+        editingTransaction.toAccountId ||
+          activeAccounts.find((a) => a.id !== (editingTransaction.accountId || fallbackAccountId))
+            ?.id ||
+          '',
+      );
       setDate(editingTransaction.date);
       setStatus(editingTransaction.status);
       setMemberId(editingTransaction.memberId ?? '');
@@ -110,6 +133,8 @@ export function FinanceTransactionModal({
     setTitle('');
     setAmountInput('');
     setCategoryId(pickDefaultCategoryId(categories, startKind, initialWarrantyMode));
+    setAccountId(fallbackAccountId);
+    setToAccountId(activeAccounts.find((a) => a.id !== fallbackAccountId)?.id ?? '');
     setDate(startDate);
     setStatus('paid');
     setMemberId('');
@@ -136,12 +161,18 @@ export function FinanceTransactionModal({
 
   const handleChangeKind = (nextKind: FinanceKind) => {
     setKind(nextKind);
-    const matchesCurrent = categories.some((c) => c.id === categoryId && c.kind === nextKind);
-    if (!matchesCurrent) {
-      setCategoryId(pickDefaultCategoryId(categories, nextKind, false));
+    if (nextKind !== 'transfer') {
+      const matchesCurrent = categories.some((c) => c.id === categoryId && c.kind === nextKind);
+      if (!matchesCurrent) {
+        setCategoryId(pickDefaultCategoryId(categories, nextKind, false));
+      }
     }
-    if (nextKind === 'income') {
+    if (nextKind === 'income' || nextKind === 'transfer') {
       setIsWarranty(false);
+    }
+    if (nextKind === 'transfer' && (!toAccountId || toAccountId === accountId)) {
+      const other = activeAccounts.find((a) => a.id !== accountId);
+      if (other) setToAccountId(other.id);
     }
   };
 
@@ -159,10 +190,23 @@ export function FinanceTransactionModal({
     e.preventDefault();
     setError(null);
 
-    const trimmedTitle = title.trim();
+    const trimmedTitle =
+      title.trim() ||
+      (kind === 'transfer'
+        ? `Transferência ${activeAccounts.find((a) => a.id === accountId)?.name ?? ''} → ${
+            activeAccounts.find((a) => a.id === toAccountId)?.name ?? ''
+          }`.trim()
+        : '');
     if (!trimmedTitle) {
       setError('Indica uma descrição (ex.: Supermercado, Ordenado, Máquina de café).');
       return;
+    }
+
+    if (kind === 'transfer') {
+      if (!accountId || !toAccountId || accountId === toAccountId) {
+        setError('Escolhe duas contas diferentes (origem e destino) para a transferência.');
+        return;
+      }
     }
 
     const parsedAmount = Number(amountInput.trim().replace(',', '.'));
@@ -183,7 +227,12 @@ export function FinanceTransactionModal({
           id: editingTransaction?.id,
           title: trimmedTitle,
           kind,
-          categoryId: categoryId || pickDefaultCategoryId(categories, kind, isWarranty),
+          categoryId:
+            kind === 'transfer'
+              ? ''
+              : categoryId || pickDefaultCategoryId(categories, kind, isWarranty),
+          accountId: accountId || fallbackAccountId,
+          toAccountId: kind === 'transfer' ? toAccountId : null,
           amount: hasAmount ? parsedAmount : 0,
           date: date || todayDateString(),
           status,
@@ -236,12 +285,25 @@ export function FinanceTransactionModal({
       <form onSubmit={handleSubmit} className="space-y-3.5">
         {/* Tipo */}
         {!initialWarrantyMode && (
-          <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-slate-100 p-1">
+          <div
+            className={`grid gap-1.5 rounded-xl bg-slate-100 p-1 ${
+              hasMultipleAccounts ? 'grid-cols-4' : 'grid-cols-3'
+            }`}
+          >
             {(
               [
                 { id: 'variable', label: 'Variável', activeClass: 'bg-white text-rose-700 shadow-xs' },
                 { id: 'fixed', label: 'Fixa', activeClass: 'bg-white text-amber-800 shadow-xs' },
                 { id: 'income', label: 'Receita', activeClass: 'bg-white text-emerald-700 shadow-xs' },
+                ...(hasMultipleAccounts
+                  ? [
+                      {
+                        id: 'transfer' as const,
+                        label: 'Transf.',
+                        activeClass: 'bg-white text-indigo-700 shadow-xs',
+                      },
+                    ]
+                  : []),
               ] as const
             ).map((opt) => (
               <button
@@ -295,27 +357,96 @@ export function FinanceTransactionModal({
           </div>
         </div>
 
-        {/* Categoria e Data */}
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">Categoria</label>
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
-            >
-              {filteredCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
+        {/* Contas (transferência ou conta da receita/despesa) */}
+        {kind === 'transfer' && hasMultipleAccounts ? (
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">
+                Da conta (origem)
+              </label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                aria-label="Conta de origem"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+              >
+                {activeAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">
+                Para a conta (destino)
+              </label>
+              <select
+                value={toAccountId}
+                onChange={(e) => setToAccountId(e.target.value)}
+                aria-label="Conta de destino"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+              >
+                {activeAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+        ) : (
+          <div className={`grid gap-2.5 ${hasMultipleAccounts ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">Categoria</label>
+              <select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+              >
+                {filteredCategories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
+            {hasMultipleAccounts && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">Conta</label>
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  aria-label="Conta financeira"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+                >
+                  {activeAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">
+                {isWarranty ? 'Data da compra' : 'Data'}
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        {kind === 'transfer' && (
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              {isWarranty ? 'Data da compra' : 'Data'}
-            </label>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">Data</label>
             <input
               type="date"
               value={date}
@@ -323,7 +454,7 @@ export function FinanceTransactionModal({
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
             />
           </div>
-        </div>
+        )}
 
         {/* Estado e Membro */}
         <div className="grid gap-2.5 sm:grid-cols-2">
@@ -378,7 +509,7 @@ export function FinanceTransactionModal({
         </div>
 
         {/* Garantia (apenas para despesas) */}
-        {kind !== 'income' && (
+        {kind !== 'income' && kind !== 'transfer' && (
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
             <label className="flex cursor-pointer items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800">
